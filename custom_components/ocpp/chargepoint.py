@@ -713,13 +713,17 @@ class ChargePoint(cp):
 
     async def notify_ha(self, msg: str, title: str = "Ocpp integration"):
         """Notify user via HA web frontend."""
-        await self.hass.services.async_call(
-            PN_DOMAIN,
-            "create",
-            service_data={
-                "title": title,
-                "message": msg,
-            },
-            blocking=False,
-        )
+        #await self.hass.services.async_call(
+        #    PN_DOMAIN,
+        #    "create",
+        #    service_data={
+        #        "title": title,
+        #        "message": msg,
+        #    },
+        #    blocking=False,
+        #)
+        
+        #Send notification only to the log
+        _LOGGER.info("Notification to HA skipped: %s", msg)
+        
         return True
