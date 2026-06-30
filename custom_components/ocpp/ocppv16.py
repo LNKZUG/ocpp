@@ -434,13 +434,8 @@ class ChargePoint(cp):
             _LOGGER.info("Smart charging is not supported by this charger")
             return False
 
-        # Determine allowed unit (default to Amps if not reported)
-        units_resp = await self.get_configuration(
-            ckey.charging_schedule_allowed_charging_rate_unit.value
-        )
-        if not units_resp:
-            _LOGGER.debug("Charging rate unit not reported; assuming Amps")
-            units_resp = om.current.value
+        # Entratek Power Dot Pro 2 fails this OCPP capability query; use Amps.
+        units_resp = om.current.value
 
         use_amps = om.current.value in units_resp
         limit_value = float(limit_amps if use_amps else limit_watts)

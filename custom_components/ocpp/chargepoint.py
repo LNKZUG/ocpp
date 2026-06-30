@@ -11,7 +11,6 @@ import secrets
 import string
 import time
 
-from homeassistant.components.persistent_notification import DOMAIN as PN_DOMAIN
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.const import STATE_OK, STATE_UNAVAILABLE, STATE_UNKNOWN
@@ -1069,13 +1068,5 @@ class ChargePoint(cp):
 
     async def notify_ha(self, msg: str, title: str = "Ocpp integration"):
         """Notify user via HA web frontend."""
-        await self.hass.services.async_call(
-            PN_DOMAIN,
-            "create",
-            service_data={
-                "title": title,
-                "message": msg,
-            },
-            blocking=False,
-        )
+        _LOGGER.info("Notification to HA skipped: %s", msg)
         return True
