@@ -5,16 +5,15 @@
 		"persistent_notification"
 	],
 	"codeowners": [
-		"@lbbrhzn",
-		"@drc38"
+		"@LNKZUG"
 	],
 	"config_flow": true,
-	"documentation": "https://github.com/lbbrhzn/ocpp/blob/main/README.md",
+	"documentation": "https://github.com/LNKZUG/ocpp/blob/lnkzug-v0.10.15-entratek-compat/README.md",
 	"iot_class": "local_push",
-	"issue_tracker": "https://github.com/lbbrhzn/ocpp/issues",
+	"issue_tracker": "https://github.com/LNKZUG/ocpp/issues",
 	"requirements": [
 		"ocpp>=2.1.0",
 		"websockets>=14.1"
 	],
-	"version": "0.8.0"
+	"version": "0.10.15-lnkzug.2"
 }
