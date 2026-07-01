@@ -4,6 +4,7 @@ import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers import device_registry
 import homeassistant.helpers.config_validation as cv
@@ -51,6 +52,98 @@ CONFIG_SCHEMA = vol.Schema(
     extra=vol.ALLOW_EXTRA,
 )
 
+ADD_USER_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_NAME): cv.string,
+        vol.Required(CONF_ID_TAG): cv.string,
+        vol.Optional("active", default=True): cv.boolean,
+    }
+)
+
+UPDATE_USER_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_ID_TAG): cv.string,
+        vol.Optional(CONF_NAME): cv.string,
+        vol.Optional("new_id_tags"): cv.string,
+        vol.Optional("active"): cv.boolean,
+    }
+)
+
+SET_USER_ACTIVE_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_ID_TAG): cv.string,
+        vol.Required("active"): cv.boolean,
+    }
+)
+
+
+async def async_setup_user_services(hass: HomeAssistant) -> None:
+    """Register OCPP user management actions."""
+    if hass.services.has_service(DOMAIN, "add_user"):
+        return
+
+    async def handle_add_user(call):
+        registry = await async_get_user_registry(hass)
+        id_tags = registry.parse_id_tags(call.data[CONF_ID_TAG])
+        if not id_tags:
+            raise HomeAssistantError("At least one id_tag is required")
+        conflicts = registry.find_conflicting_id_tags(id_tags)
+        if conflicts:
+            raise HomeAssistantError(
+                "OCPP id_tag already assigned: {}".format(", ".join(conflicts))
+            )
+        await registry.async_add_user(
+            call.data[CONF_NAME],
+            id_tags,
+            call.data["active"],
+        )
+
+    async def handle_update_user(call):
+        registry = await async_get_user_registry(hass)
+        user = registry.get_user_for_id_tag(call.data[CONF_ID_TAG])
+        if user is None:
+            raise HomeAssistantError("No OCPP user found for id_tag")
+
+        id_tags = None
+        if "new_id_tags" in call.data:
+            id_tags = registry.parse_id_tags(call.data["new_id_tags"])
+            conflicts = registry.find_conflicting_id_tags(id_tags, user["user_id"])
+            if conflicts:
+                raise HomeAssistantError(
+                    "OCPP id_tag already assigned: {}".format(", ".join(conflicts))
+                )
+
+        await registry.async_update_user(
+            user["user_id"],
+            name=call.data.get(CONF_NAME),
+            id_tags=id_tags,
+            active=call.data.get("active"),
+        )
+
+    async def handle_set_user_active(call):
+        registry = await async_get_user_registry(hass)
+        user = registry.get_user_for_id_tag(call.data[CONF_ID_TAG])
+        if user is None:
+            raise HomeAssistantError("No OCPP user found for id_tag")
+        await registry.async_update_user(
+            user["user_id"],
+            active=call.data["active"],
+        )
+
+    hass.services.async_register(DOMAIN, "add_user", handle_add_user, ADD_USER_SCHEMA)
+    hass.services.async_register(
+        DOMAIN,
+        "update_user",
+        handle_update_user,
+        UPDATE_USER_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "set_user_active",
+        handle_set_user_active,
+        SET_USER_ACTIVE_SCHEMA,
+    )
+
 
 async def async_setup(hass: HomeAssistant, config: ConfigType):
     """Read configuration from yaml."""
@@ -59,6 +152,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
     if DOMAIN not in hass.data:
         hass.data[DOMAIN] = {}
     hass.data[DOMAIN][CONFIG] = ocpp_config
+    await async_setup_user_services(hass)
     _LOGGER.info(f"config = {ocpp_config}")
     return True
 
@@ -70,6 +164,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         _LOGGER.info(entry.data)
 
     await async_get_user_registry(hass)
+    await async_setup_user_services(hass)
     central_sys = await CentralSystem.create(hass, entry)
 
     dr = device_registry.async_get(hass)

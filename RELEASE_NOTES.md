@@ -1,5 +1,15 @@
 # Release Notes
 
+## v0.5.6.4 - User actions
+
+Replaces the experimental options-flow user UI with Home Assistant actions:
+
+* `ocpp.add_user`
+* `ocpp.update_user`
+* `ocpp.set_user_active`
+
+This avoids the broken Configure dialog on Home Assistant versions where the old options flow fails with a 500 error.
+
 ## v0.5.6.3 - Sensor translations
 
 Adds native Home Assistant translation keys for OCPP sensors and German enum translations for charger status values such as `Charging`, `Available`, `Preparing`, `SuspendedEV` and `SuspendedEVSE`.

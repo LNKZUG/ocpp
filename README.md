@@ -16,7 +16,7 @@ Add this repository to HACS as a custom integration:
 https://github.com/LNKZUG/ocpp
 ```
 
-Install release `v0.5.6.3` or newer from the `v0.5.6.x` train and restart Home Assistant.
+Install release `v0.5.6.4` or newer from the `v0.5.6.x` train and restart Home Assistant.
 
 The previous experimental `v0.10.x` releases are retired in this fork. Use the `v0.5.6.x` train for Entratek/DUOSIDA chargers.
 
@@ -44,7 +44,13 @@ This fork includes the proven production adjustments:
 
 Release `v0.5.6.2` adds integration-native user management.
 
-Open the OCPP integration entry in Home Assistant and choose **Configure** to add, edit, activate or deactivate users. Users are matched by OCPP `idTag`.
+Add users through Home Assistant actions:
+
+* `ocpp.add_user`
+* `ocpp.update_user`
+* `ocpp.set_user_active`
+
+Users are matched by OCPP `idTag`.
 
 For every managed user the integration creates one total energy sensor:
 

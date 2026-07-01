@@ -1,4 +1,65 @@
 # Service ID
+add_user:
+  name: Add OCPP user
+  description: Adds a managed OCPP user and creates the corresponding user energy entity.
+  fields:
+    name:
+      name: Name
+      description: User display name.
+      required: true
+      example: "Daniel"
+    id_tag:
+      name: OCPP idTag
+      description: One or more OCPP idTags. Separate multiple tags with commas.
+      required: true
+      example: "FBC7270B"
+    active:
+      name: Active
+      description: Whether this user is allowed to charge.
+      required: false
+      default: true
+      example: true
+
+update_user:
+  name: Update OCPP user
+  description: Updates a managed OCPP user found by one assigned idTag.
+  fields:
+    id_tag:
+      name: Existing OCPP idTag
+      description: Existing idTag of the user to update.
+      required: true
+      example: "FBC7270B"
+    name:
+      name: Name
+      description: New user display name.
+      required: false
+      example: "Daniel"
+    new_id_tags:
+      name: New OCPP idTags
+      description: Replacement idTags. Separate multiple tags with commas.
+      required: false
+      example: "FBC7270B, AABBCCDD"
+    active:
+      name: Active
+      description: Whether this user is allowed to charge.
+      required: false
+      example: true
+
+set_user_active:
+  name: Set OCPP user active state
+  description: Activates or deactivates a managed OCPP user found by idTag.
+  fields:
+    id_tag:
+      name: OCPP idTag
+      description: Existing idTag of the user.
+      required: true
+      example: "FBC7270B"
+    active:
+      name: Active
+      description: Whether this user is allowed to charge.
+      required: true
+      example: false
+
 set_charge_rate:
   # Service name as shown in UI
   name: Set maximum charge rate
