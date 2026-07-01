@@ -236,6 +236,19 @@ class CentralSystem:
         _LOGGER.info(f"Charger websocket path={websocket.request.path}")
         cp_id = websocket.request.path.strip("/")
         cp_id = cp_id[cp_id.rfind("/") + 1 :]
+        if not cp_id:
+            if self.settings.cpids:
+                first_config = self.settings.cpids[0]
+                cp_id = next(iter(first_config.keys()))
+                _LOGGER.info(
+                    "No charger id in websocket path; using configured charger id %s",
+                    cp_id,
+                )
+            else:
+                cp_id = "default"
+                _LOGGER.info(
+                    "No charger id in websocket path; using default discovery id"
+                )
         if cp_id not in self.charge_points:
             try:
                 config_flow = False
