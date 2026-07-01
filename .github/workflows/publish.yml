@@ -7,6 +7,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "v*"
 
 jobs:
   release_zip_file:
@@ -40,13 +42,13 @@ jobs:
 
       # Pack the dir as a zip and upload to the release
       - name: 📦 ZIP Dir
-        if: ${{ github.event_name == 'release' }}
+        if: ${{ github.event_name == 'release' || startsWith(github.ref, 'refs/tags/') }}
         run: |
           cd ${{ github.workspace }}/custom_components/ocpp
           zip ocpp.zip -r ./
 
       - name: 📤 Upload zip to release
         uses: softprops/action-gh-release@v2
-        if: ${{ github.event_name == 'release' }}
+        if: ${{ github.event_name == 'release' || startsWith(github.ref, 'refs/tags/') }}
         with:
           files: ${{ github.workspace }}/custom_components/ocpp/ocpp.zip

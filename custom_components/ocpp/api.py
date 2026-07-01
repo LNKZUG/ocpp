@@ -665,9 +665,10 @@ class ChargePoint(cp):
                 return False
 
         if prof.SMART in self._attr_supported_features:
-            resp = await self.get_configuration(
-                ckey.charging_schedule_allowed_charging_rate_unit.value
-            )
+#            resp = await self.get_configuration(
+            resp=om.current.value
+#                ckey.charging_schedule_allowed_charging_rate_unit.value
+#            )
             _LOGGER.info(
                 "Charger supports setting the following units: %s",
                 resp,
@@ -1526,15 +1527,19 @@ class ChargePoint(cp):
 
     async def notify_ha(self, msg: str, title: str = "Ocpp integration"):
         """Notify user via HA web frontend."""
-        await self.hass.services.async_call(
-            PN_DOMAIN,
-            "create",
-            service_data={
-                "title": title,
-                "message": msg,
-            },
-            blocking=False,
-        )
+        #await self.hass.services.async_call(
+        #    PN_DOMAIN,
+        #    "create",
+        #    service_data={
+        #        "title": title,
+        #        "message": msg,
+        #    },
+        #    blocking=False,
+        #)
+
+        #Send notification only to the log
+        _LOGGER.info("Notification to HA skipped: %s", msg)
+
         return True
 
 
