@@ -1,5 +1,9 @@
 # Release Notes
 
+## v0.5.6.6 - Release notes backfill
+
+Backfills GitHub/HACS release notes for all `v0.5.6.x` releases from `RELEASE_NOTES.md` whenever a new release is published.
+
 ## v0.5.6.5 - Release notes automation
 
 Ensures GitHub/HACS releases include the matching section from `RELEASE_NOTES.md` instead of showing `None` in Home Assistant.
