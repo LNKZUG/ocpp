@@ -361,7 +361,11 @@ class ChargePoint(cp):
 
             if status != TriggerMessageStatus.accepted:
                 if cid > 0:
-                    _LOGGER.warning("Failed with response: %s", status)
+                    _LOGGER.debug(
+                        "TriggerMessage StatusNotification ignored for connector=%s; response=%s",
+                        cid,
+                        status,
+                    )
                     # Reduce to the last known-good connector index.
                     self._metrics[0][cdet.connectors.value].value = max(1, cid - 1)
                     return False

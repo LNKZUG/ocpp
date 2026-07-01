@@ -367,12 +367,9 @@ class ChargePoint(cp):
                         )
                     except Exception as ex:
                         _LOGGER.debug("trigger_boot_notification ignored: %s", ex)
-                try:
-                    await asyncio.wait_for(
-                        self.trigger_status_notification(), timeout=3
-                    )
-                except Exception as ex:
-                    _LOGGER.debug("trigger_status_notification ignored: %s", ex)
+                _LOGGER.debug(
+                    "Skipping automatic trigger_status_notification during post_connect"
+                )
 
             # Ensure HA states are correct immediately after connection
             self.hass.async_create_task(self.update(self.settings.cpid))
