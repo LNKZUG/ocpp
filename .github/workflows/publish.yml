@@ -17,38 +17,57 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: 📥 Checkout the repository
+      - name: Checkout the repository
         uses: actions/checkout@v4
 
-      - name: 🛠️ Set up Python
+      - name: Set up Python
         uses: actions/setup-python@v5.1.0
         with:
           python-version: "3.x"
 
-      - name: 🔢 Get version
+      - name: Get version
         id: version
         uses: home-assistant/actions/helpers/version@master
 
-      - name: 🔢 Set version number
+      - name: Set version number
         run: |
           python3 ${{ github.workspace }}/manage/update_manifest.py --version ${{ steps.version.outputs.version }}
 
-      - name: 📤 Upload zip to action
+      - name: Upload zip to action
         uses: actions/upload-artifact@v4.3.3
         if: ${{ github.event_name == 'push' }}
         with:
           name: ocpp
           path: ${{ github.workspace }}/custom_components/ocpp
 
-      # Pack the dir as a zip and upload to the release
-      - name: 📦 ZIP Dir
+      - name: ZIP dir
         if: ${{ github.event_name == 'release' || startsWith(github.ref, 'refs/tags/') }}
         run: |
           cd ${{ github.workspace }}/custom_components/ocpp
           zip ocpp.zip -r ./
 
-      - name: 📤 Upload zip to release
+      - name: Build release notes
+        if: ${{ github.event_name == 'release' || startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          version="${GITHUB_REF_NAME}"
+          awk -v version="$version" '
+            /^## / {
+              if (capture) {
+                exit
+              }
+              capture = ($2 == version)
+            }
+            capture {
+              print
+            }
+          ' RELEASE_NOTES.md > release_body.md
+          if [ ! -s release_body.md ]; then
+            printf "See RELEASE_NOTES.md for release details.\n" > release_body.md
+          fi
+
+      - name: Upload zip to release
         uses: softprops/action-gh-release@v2
         if: ${{ github.event_name == 'release' || startsWith(github.ref, 'refs/tags/') }}
         with:
+          body_path: ${{ github.workspace }}/release_body.md
           files: ${{ github.workspace }}/custom_components/ocpp/ocpp.zip

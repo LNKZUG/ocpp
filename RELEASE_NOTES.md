@@ -1,5 +1,9 @@
 # Release Notes
 
+## v0.5.6.5 - Release notes automation
+
+Ensures GitHub/HACS releases include the matching section from `RELEASE_NOTES.md` instead of showing `None` in Home Assistant.
+
 ## v0.5.6.4 - User actions
 
 Replaces the experimental options-flow user UI with Home Assistant actions:
