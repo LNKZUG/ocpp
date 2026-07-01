@@ -21,13 +21,22 @@ from .api import CentralSystem
 from .const import (
     CONF_CPID,
     DATA_UPDATED,
+    DATA_USERS_UPDATED,
     DEFAULT_CLASS_UNITS_HA,
     DEFAULT_CPID,
     DOMAIN,
     ICON,
     Measurand,
+    USER_SENSOR_IDS,
+    USER_SENSOR_SETUP_DONE,
 )
 from .enums import HAChargerDetails, HAChargerSession, HAChargerStatuses
+from .user_registry import (
+    USER_SENSOR_DEVICE_CLASS,
+    USER_SENSOR_STATE_CLASS,
+    USER_SENSOR_UNIT,
+    async_get_user_registry,
+)
 
 
 @dataclass
@@ -74,6 +83,38 @@ async def async_setup_entry(hass, entry, async_add_devices):
         )
 
     async_add_devices(entities, False)
+
+    registry = await async_get_user_registry(hass)
+    if not hass.data[DOMAIN].get(USER_SENSOR_SETUP_DONE):
+        hass.data[DOMAIN][USER_SENSOR_SETUP_DONE] = True
+        hass.data[DOMAIN][USER_SENSOR_IDS] = set()
+
+        @callback
+        def add_missing_user_sensors():
+            known_user_ids = hass.data[DOMAIN][USER_SENSOR_IDS]
+            new_entities = []
+            for user in registry.list_users():
+                user_id = user["user_id"]
+                if user_id in known_user_ids:
+                    continue
+                known_user_ids.add(user_id)
+                new_entities.append(UserEnergySensor(hass, registry, user_id))
+            if new_entities:
+                async_add_devices(new_entities, False)
+
+        add_missing_user_sensors()
+        entry.async_on_unload(
+            async_dispatcher_connect(
+                hass, DATA_USERS_UPDATED, add_missing_user_sensors
+            )
+        )
+
+        @callback
+        def reset_user_sensor_setup():
+            hass.data[DOMAIN].pop(USER_SENSOR_SETUP_DONE, None)
+            hass.data[DOMAIN].pop(USER_SENSOR_IDS, None)
+
+        entry.async_on_unload(reset_user_sensor_setup)
 
 
 class ChargePointMetric(RestoreSensor, SensorEntity):
@@ -205,6 +246,86 @@ class ChargePointMetric(RestoreSensor, SensorEntity):
 
         async_dispatcher_connect(
             self._hass, DATA_UPDATED, self._schedule_immediate_update
+        )
+
+    @callback
+    def _schedule_immediate_update(self):
+        self.async_schedule_update_ha_state(True)
+
+
+class UserEnergySensor(SensorEntity):
+    """Total OCPP charging energy for one managed user."""
+
+    _attr_has_entity_name = False
+    _attr_device_class = USER_SENSOR_DEVICE_CLASS
+    _attr_icon = ICON
+    _attr_native_unit_of_measurement = USER_SENSOR_UNIT
+    _attr_state_class = USER_SENSOR_STATE_CLASS
+
+    def __init__(self, hass: HomeAssistant, registry, user_id: str):
+        """Initialize a user energy sensor."""
+        self._hass = hass
+        self.registry = registry
+        self.user_id = user_id
+        self._attr_unique_id = f"{DOMAIN}_user_{user_id}_energy"
+
+    @property
+    def user(self):
+        """Return the registry user for this sensor."""
+        return self.registry.get_user(self.user_id)
+
+    @property
+    def name(self):
+        """Return the entity name."""
+        user = self.user
+        if user is None:
+            return "OCPP unknown user Ladeenergie"
+        return f"OCPP {user['name']} Ladeenergie"
+
+    @property
+    def available(self) -> bool:
+        """Return whether the user still exists."""
+        return self.user is not None
+
+    @property
+    def native_value(self):
+        """Return accumulated charging energy."""
+        user = self.user
+        if user is None:
+            return None
+        return user.get("energy_kwh", 0.0)
+
+    @property
+    def device_info(self):
+        """Return device info for the managed user."""
+        user = self.user
+        user_name = user["name"] if user is not None else self.user_id
+        return DeviceInfo(
+            identifiers={(DOMAIN, f"user_{self.user_id}")},
+            name=f"OCPP {user_name}",
+            model="OCPP User",
+        )
+
+    @property
+    def extra_state_attributes(self):
+        """Return user metadata."""
+        user = self.user
+        if user is None:
+            return {}
+        return {
+            "active": user.get("active", True),
+            "id_tags": user.get("id_tags", []),
+            "last_session_energy_kwh": user.get("last_session_energy_kwh"),
+            "last_session_finished_at": user.get("last_session_finished_at"),
+        }
+
+    async def async_added_to_hass(self) -> None:
+        """Handle entity addition."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self._hass, DATA_USERS_UPDATED, self._schedule_immediate_update
+            )
         )
 
     @callback

@@ -26,6 +26,7 @@ from .const import (
     DOMAIN,
     PLATFORMS,
 )
+from .user_registry import async_get_user_registry
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 logging.getLogger(DOMAIN).setLevel(logging.INFO)
@@ -68,6 +69,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         hass.data.setdefault(DOMAIN, {})
         _LOGGER.info(entry.data)
 
+    await async_get_user_registry(hass)
     central_sys = await CentralSystem.create(hass, entry)
 
     dr = device_registry.async_get(hass)

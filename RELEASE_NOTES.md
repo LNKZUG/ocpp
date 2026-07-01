@@ -1,5 +1,21 @@
 # Release Notes
 
+## v0.5.6.2 - OCPP user management
+
+Adds integration-native user management on top of the known working Entratek `v0.5.6` build.
+
+### Added
+
+* Persistent OCPP user registry stored through Home Assistant storage.
+* Options-flow UI to add, edit, activate and deactivate users.
+* Mapping from one or more OCPP `idTag` values to a named user.
+* Managed-user authorization before the legacy YAML authorization fallback.
+* One total kWh energy sensor per managed user across all configured chargers.
+
+### Notes
+
+Existing helpers and manually created counters are left untouched. Cost counters are intentionally not included in this version.
+
 ## v0.5.6.1 - Known working Entratek production release
 
 This release is the conservative, known working LNKZUG build for Entratek Power Dot Pro 2 wallboxes.

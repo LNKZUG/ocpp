@@ -2,55 +2,52 @@
 
 ![OCPP](https://github.com/home-assistant/brands/raw/master/custom_integrations/ocpp/icon.png)
 
-# LNKZUG OCPP - known working Entratek release
+# LNKZUG OCPP
 
-This branch contains the known working Home Assistant OCPP integration used with Entratek Power Dot Pro 2 wallboxes in the LNKZUG setup.
+Known working Home Assistant OCPP custom integration for Entratek Power Dot Pro 2 / DUOSIDA Mode3@11KW chargers.
 
-It is intentionally based on the older upstream `v0.5.6` integration, plus the exact component files exported from the working production Home Assistant instance.
+This fork is based on upstream `v0.5.6` and keeps the production behavior that works with the LNKZUG wallboxes.
 
-## Target charger
+## Installation
 
-This release is intended for:
-
-* Entratek Power Dot Pro 2
-* OCPP 1.6 JSON mode
-* Home Assistant custom integration installed through HACS
-
-## Why this branch exists
-
-Newer upstream OCPP versions changed the connection and setup flow. Those newer builds are useful long term, but the Entratek charger currently behaves correctly with the older `v0.5.6`-based integration.
-
-This branch is therefore a conservative recovery release: install it when you need the known working behavior rather than the latest upstream code.
-
-## Expected OCPP URL
-
-The Entratek charger can be configured with the central system URL without a charge point id path:
-
-```text
-ws://<home-assistant-ip>:9000
-```
-
-Example:
-
-```text
-ws://192.168.248.150:9000
-```
-
-## Included compatibility changes
-
-Compared with upstream `v0.5.6`, the production files include these practical adjustments:
-
-* Home Assistant persistent notifications from charger warnings are suppressed and written to the log instead.
-* OCPP 1.6 charging profiles assume current in amps instead of querying `ChargingScheduleAllowedChargingRateUnit`.
-* The idle sampling interval default is 60 seconds.
-* Home Assistant `ConfigType` typing is used for compatibility with newer Home Assistant versions.
-
-## HACS installation
-
-Add this repository as a custom HACS integration repository:
+Add this repository to HACS as a custom integration:
 
 ```text
 https://github.com/LNKZUG/ocpp
 ```
 
-Install release `v0.5.6.1` and restart Home Assistant.
+Install release `v0.5.6.2` and restart Home Assistant.
+
+## Charger URL
+
+Configure each charger with its own Central System / port, for example:
+
+```text
+ws://192.168.248.150:9000
+ws://192.168.248.150:9001
+```
+
+Do not add a charge point id path unless your charger is explicitly configured for that.
+
+## Entratek compatibility
+
+This fork includes the proven production adjustments:
+
+* suppress Home Assistant persistent notifications and log them instead,
+* use amps for OCPP charging profiles,
+* use 60 seconds as idle sampling interval,
+* keep Home Assistant `ConfigType` compatibility.
+
+## User management
+
+Release `v0.5.6.2` adds integration-native user management.
+
+Open the OCPP integration entry in Home Assistant and choose **Configure** to add, edit, activate or deactivate users. Users are matched by OCPP `idTag`.
+
+For every managed user the integration creates one total energy sensor:
+
+```text
+OCPP <user name> Ladeenergie
+```
+
+The sensor adds completed charging sessions across all configured chargers. Existing helpers and manually created sensors are not changed.

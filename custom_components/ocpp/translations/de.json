@@ -56,5 +56,54 @@
         "abort": {
             "single_instance_allowed": "Es ist nur eine Instanz erlaubt."
         }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "OCPP Nutzerverwaltung",
+                "menu_options": {
+                    "add_user": "Nutzer anlegen",
+                    "edit_user": "Nutzer bearbeiten",
+                    "toggle_user": "Nutzer aktivieren/deaktivieren"
+                }
+            },
+            "add_user": {
+                "title": "OCPP Nutzer anlegen",
+                "description": "Ordne einem Nutzer einen oder mehrere OCPP idTag Werte zu. Mehrere Tags mit Komma trennen.",
+                "data": {
+                    "name": "Name",
+                    "id_tags": "OCPP idTags",
+                    "active": "Aktiv"
+                }
+            },
+            "edit_user": {
+                "title": "OCPP Nutzer bearbeiten",
+                "data": {
+                    "user_id": "Nutzer"
+                }
+            },
+            "edit_user_form": {
+                "title": "OCPP Nutzer bearbeiten",
+                "data": {
+                    "name": "Name",
+                    "id_tags": "OCPP idTags",
+                    "active": "Aktiv"
+                }
+            },
+            "toggle_user": {
+                "title": "OCPP Nutzer aktivieren/deaktivieren",
+                "data": {
+                    "user_id": "Nutzer"
+                }
+            }
+        },
+        "error": {
+            "invalid_user": "Name und mindestens ein idTag sind erforderlich.",
+            "duplicate_id_tag": "Mindestens ein idTag ist bereits einem anderen Nutzer zugeordnet."
+        },
+        "abort": {
+            "no_users": "Es wurden noch keine OCPP Nutzer angelegt.",
+            "user_not_found": "Der ausgewaehlte OCPP Nutzer existiert nicht mehr."
+        }
     }
 }

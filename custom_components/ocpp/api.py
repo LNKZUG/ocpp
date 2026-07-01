@@ -95,6 +95,7 @@ from .const import (
     HA_ENERGY_UNIT,
     HA_POWER_UNIT,
     UNITS_OCCP_TO_HA,
+    USER_REGISTRY,
 )
 from .enums import (
     ConfigurationKey as ckey,
@@ -181,6 +182,7 @@ class CentralSystem:
         self._server = None
         self.config = entry.data
         self.id = entry.entry_id
+        self.user_registry = hass.data[DOMAIN].get(USER_REGISTRY)
         self.charge_points = {}
         if entry.data.get(CONF_SSL, DEFAULT_SSL):
             self.ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -1383,6 +1385,16 @@ class ChargePoint(cp):
 
     def get_authorization_status(self, id_tag):
         """Get the authorization status for an id_tag."""
+        if self.central.user_registry is not None:
+            auth_status = self.central.user_registry.get_authorization_status(id_tag)
+            if auth_status is not None:
+                _LOGGER.debug(
+                    "id_tag='%s' found in user registry, authorization_status='%s'",
+                    id_tag,
+                    auth_status,
+                )
+                return auth_status
+
         # get the domain wide configuration
         config = self.hass.data[DOMAIN].get(CONFIG, {})
         # get the default authorization status. Use accept if not configured
@@ -1424,10 +1436,20 @@ class ChargePoint(cp):
         auth_status = self.get_authorization_status(id_tag)
         if auth_status == AuthorizationStatus.accepted.value:
             self.active_transaction_id = int(time.time())
+            self._charger_reports_session_energy = False
             self._metrics[cstat.id_tag.value].value = id_tag
             self._metrics[cstat.stop_reason.value].value = ""
             self._metrics[csess.transaction_id.value].value = self.active_transaction_id
-            self._metrics[csess.meter_start.value].value = int(meter_start) / 1000
+            self._metrics[csess.session_energy.value].value = None
+            meter_start_kwh = int(meter_start) / 1000
+            self._metrics[csess.meter_start.value].value = meter_start_kwh
+            if self.central.user_registry is not None:
+                self.central.user_registry.record_start_transaction(
+                    self.active_transaction_id,
+                    id_tag,
+                    self.central.cpid,
+                    meter_start_kwh,
+                )
             result = call_result.StartTransaction(
                 id_tag_info={om.status.value: AuthorizationStatus.accepted.value},
                 transaction_id=self.active_transaction_id,
@@ -1469,6 +1491,14 @@ class ChargePoint(cp):
             self._metrics[Measurand.power_active_export.value].value = 0
         if Measurand.power_reactive_export.value in self._metrics:
             self._metrics[Measurand.power_reactive_export.value].value = 0
+        if self.central.user_registry is not None:
+            session_energy = self._metrics[csess.session_energy.value].value
+            self.central.user_registry.record_stop_transaction(
+                transaction_id,
+                self.central.cpid,
+                int(meter_stop) / 1000,
+                float(session_energy) if session_energy is not None else None,
+            )
         self.hass.async_create_task(self.central.update(self.central.cpid))
         return call_result.StopTransaction(
             id_tag_info={om.status.value: AuthorizationStatus.accepted.value}
