@@ -16,6 +16,7 @@ from homeassistant.const import CONF_MONITORED_VARIABLES
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
+from homeassistant.util import slugify
 
 from .api import CentralSystem
 from .const import (
@@ -46,6 +47,24 @@ class OcppSensorDescription(SensorEntityDescription):
     metric: str | None = None
 
 
+STATUS_TRANSLATION_OPTIONS = [
+    "Available",
+    "Unavailable",
+    "Finishing",
+    "Charging",
+    "SuspendedEV",
+    "SuspendedEVSE",
+    "Preparing",
+    "Reserved",
+    "Faulted",
+]
+
+
+def metric_translation_key(metric: str) -> str:
+    """Return the HA translation key for an OCPP metric."""
+    return slugify(metric.replace(".", "_")).replace("-", "_")
+
+
 async def async_setup_entry(hass, entry, async_add_devices):
     """Configure the sensor platform."""
     central_system = hass.data[DOMAIN][entry.entry_id]
@@ -58,16 +77,16 @@ async def async_setup_entry(hass, entry, async_add_devices):
         SENSORS.append(
             OcppSensorDescription(
                 key=metric.lower(),
-                name=metric.replace(".", " "),
                 metric=metric,
+                translation_key=metric_translation_key(metric),
             )
         )
     for metric in list(HAChargerStatuses) + list(HAChargerDetails):
         SENSORS.append(
             OcppSensorDescription(
                 key=metric.lower(),
-                name=metric.replace(".", " "),
                 metric=metric,
+                translation_key=metric_translation_key(metric),
                 entity_category=EntityCategory.DIAGNOSTIC,
             )
         )
@@ -142,6 +161,7 @@ class ChargePointMetric(RestoreSensor, SensorEntity):
             [DOMAIN, self.cp_id, self.entity_description.key, SENSOR_DOMAIN]
         )
         self._attr_name = self.entity_description.name
+        self._attr_translation_key = self.entity_description.translation_key
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self.cp_id)},
             via_device=(DOMAIN, self.central_system.id),
@@ -215,7 +235,19 @@ class ChargePointMetric(RestoreSensor, SensorEntity):
             device_class = SensorDeviceClass.TIMESTAMP
         elif self.metric.lower().startswith("soc"):
             device_class = SensorDeviceClass.BATTERY
+        elif self.metric in [
+            HAChargerStatuses.status.value,
+            HAChargerStatuses.status_connector.value,
+        ]:
+            device_class = SensorDeviceClass.ENUM
         return device_class
+
+    @property
+    def options(self):
+        """Return possible enum states for translated status sensors."""
+        if self.device_class is SensorDeviceClass.ENUM:
+            return STATUS_TRANSLATION_OPTIONS
+        return None
 
     @property
     def native_value(self):

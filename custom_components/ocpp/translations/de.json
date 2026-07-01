@@ -57,6 +57,83 @@
             "single_instance_allowed": "Es ist nur eine Instanz erlaubt."
         }
     },
+    "entity": {
+        "sensor": {
+            "connectors": {"name": "Anschlüsse"},
+            "current_export": {"name": "Strom Export"},
+            "current_import": {"name": "Strom Import"},
+            "current_offered": {"name": "Angebotener Strom"},
+            "energy_active_export_interval": {"name": "Wirkenergie Export Intervall"},
+            "energy_active_export_register": {"name": "Wirkenergie Export Gesamt"},
+            "energy_active_import_interval": {"name": "Wirkenergie Import Intervall"},
+            "energy_active_import_register": {"name": "Wirkenergie Import Gesamt"},
+            "energy_meter_start": {"name": "Zählerstand Start"},
+            "energy_reactive_export_interval": {"name": "Blindenergie Export Intervall"},
+            "energy_reactive_export_register": {"name": "Blindenergie Export Gesamt"},
+            "energy_reactive_import_interval": {"name": "Blindenergie Import Intervall"},
+            "energy_reactive_import_register": {"name": "Blindenergie Import Gesamt"},
+            "energy_session": {"name": "Ladeenergie Sitzung"},
+            "error_code": {"name": "Fehlercode"},
+            "error_code_connector": {"name": "Fehlercode Anschluss"},
+            "features": {"name": "Funktionen"},
+            "frequency": {"name": "Frequenz"},
+            "heartbeat": {"name": "Heartbeat"},
+            "id": {"name": "ID"},
+            "id_tag": {"name": "Id Tag"},
+            "latency_ping": {"name": "Latenz Ping"},
+            "latency_pong": {"name": "Latenz Pong"},
+            "model": {"name": "Modell"},
+            "power_active_export": {"name": "Wirkleistung Export"},
+            "power_active_import": {"name": "Wirkleistung Import"},
+            "power_factor": {"name": "Leistungsfaktor"},
+            "power_offered": {"name": "Angebotene Leistung"},
+            "power_reactive_export": {"name": "Blindleistung Export"},
+            "power_reactive_import": {"name": "Blindleistung Import"},
+            "reconnects": {"name": "Neuverbinden"},
+            "rpm": {"name": "RPM"},
+            "serial": {"name": "Seriennummer"},
+            "soc": {"name": "Ladezustand"},
+            "status": {
+                "name": "Status",
+                "state": {
+                    "Available": "Bereit",
+                    "Unavailable": "Gesperrt",
+                    "Finishing": "Ladevorgang wird abgeschlossen",
+                    "Charging": "Ladevorgang läuft",
+                    "SuspendedEV": "Ladevorgang durch Fahrzeug ausgesetzt",
+                    "SuspendedEVSE": "Ladevorgang durch Wallbox ausgesetzt",
+                    "Preparing": "Ladevorgang wird vorbereitet",
+                    "Reserved": "Reserviert",
+                    "Faulted": "Fehler"
+                }
+            },
+            "status_connector": {
+                "name": "Status Anschluss",
+                "state": {
+                    "Available": "Bereit",
+                    "Unavailable": "Gesperrt",
+                    "Finishing": "Ladevorgang wird abgeschlossen",
+                    "Charging": "Ladevorgang läuft",
+                    "SuspendedEV": "Ladevorgang durch Fahrzeug ausgesetzt",
+                    "SuspendedEVSE": "Ladevorgang durch Wallbox ausgesetzt",
+                    "Preparing": "Ladevorgang wird vorbereitet",
+                    "Reserved": "Reserviert",
+                    "Faulted": "Fehler"
+                }
+            },
+            "status_firmware": {"name": "Firmwarestatus"},
+            "stop_reason": {"name": "Stoppgrund"},
+            "temperature": {"name": "Temperatur"},
+            "time_session": {"name": "Sitzungsdauer"},
+            "timestamp_config_response": {"name": "Zeitpunkt Konfigurationsantwort"},
+            "timestamp_data_response": {"name": "Zeitpunkt Datenantwort"},
+            "timestamp_data_transfer": {"name": "Zeitpunkt Datentransfer"},
+            "transaction_id": {"name": "Transaktions-ID"},
+            "vendor": {"name": "Hersteller"},
+            "version_firmware": {"name": "Firmwareversion"},
+            "voltage": {"name": "Spannung"}
+        }
+    },
     "options": {
         "step": {
             "init": {

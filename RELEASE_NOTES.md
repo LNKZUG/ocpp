@@ -1,5 +1,9 @@
 # Release Notes
 
+## v0.5.6.3 - Sensor translations
+
+Adds native Home Assistant translation keys for OCPP sensors and German enum translations for charger status values such as `Charging`, `Available`, `Preparing`, `SuspendedEV` and `SuspendedEVSE`.
+
 ## v0.5.6.2 - OCPP user management
 
 Adds integration-native user management on top of the known working Entratek `v0.5.6` build.

@@ -60,6 +60,83 @@
             "single_instance_allowed": "Only a single instance is allowed."
         }
     },
+    "entity": {
+        "sensor": {
+            "connectors": {"name": "Connectors"},
+            "current_export": {"name": "Current Export"},
+            "current_import": {"name": "Current Import"},
+            "current_offered": {"name": "Current Offered"},
+            "energy_active_export_interval": {"name": "Energy Active Export Interval"},
+            "energy_active_export_register": {"name": "Energy Active Export Register"},
+            "energy_active_import_interval": {"name": "Energy Active Import Interval"},
+            "energy_active_import_register": {"name": "Energy Active Import Register"},
+            "energy_meter_start": {"name": "Energy Meter Start"},
+            "energy_reactive_export_interval": {"name": "Energy Reactive Export Interval"},
+            "energy_reactive_export_register": {"name": "Energy Reactive Export Register"},
+            "energy_reactive_import_interval": {"name": "Energy Reactive Import Interval"},
+            "energy_reactive_import_register": {"name": "Energy Reactive Import Register"},
+            "energy_session": {"name": "Energy Session"},
+            "error_code": {"name": "Error Code"},
+            "error_code_connector": {"name": "Error Code Connector"},
+            "features": {"name": "Features"},
+            "frequency": {"name": "Frequency"},
+            "heartbeat": {"name": "Heartbeat"},
+            "id": {"name": "ID"},
+            "id_tag": {"name": "Id Tag"},
+            "latency_ping": {"name": "Latency Ping"},
+            "latency_pong": {"name": "Latency Pong"},
+            "model": {"name": "Model"},
+            "power_active_export": {"name": "Power Active Export"},
+            "power_active_import": {"name": "Power Active Import"},
+            "power_factor": {"name": "Power Factor"},
+            "power_offered": {"name": "Power Offered"},
+            "power_reactive_export": {"name": "Power Reactive Export"},
+            "power_reactive_import": {"name": "Power Reactive Import"},
+            "reconnects": {"name": "Reconnects"},
+            "rpm": {"name": "RPM"},
+            "serial": {"name": "Serial"},
+            "soc": {"name": "SoC"},
+            "status": {
+                "name": "Status",
+                "state": {
+                    "Available": "Available",
+                    "Unavailable": "Unavailable",
+                    "Finishing": "Finishing",
+                    "Charging": "Charging",
+                    "SuspendedEV": "Suspended by vehicle",
+                    "SuspendedEVSE": "Suspended by charger",
+                    "Preparing": "Preparing",
+                    "Reserved": "Reserved",
+                    "Faulted": "Faulted"
+                }
+            },
+            "status_connector": {
+                "name": "Status Connector",
+                "state": {
+                    "Available": "Available",
+                    "Unavailable": "Unavailable",
+                    "Finishing": "Finishing",
+                    "Charging": "Charging",
+                    "SuspendedEV": "Suspended by vehicle",
+                    "SuspendedEVSE": "Suspended by charger",
+                    "Preparing": "Preparing",
+                    "Reserved": "Reserved",
+                    "Faulted": "Faulted"
+                }
+            },
+            "status_firmware": {"name": "Status Firmware"},
+            "stop_reason": {"name": "Stop Reason"},
+            "temperature": {"name": "Temperature"},
+            "time_session": {"name": "Time Session"},
+            "timestamp_config_response": {"name": "Timestamp Config Response"},
+            "timestamp_data_response": {"name": "Timestamp Data Response"},
+            "timestamp_data_transfer": {"name": "Timestamp Data Transfer"},
+            "transaction_id": {"name": "Transaction Id"},
+            "vendor": {"name": "Vendor"},
+            "version_firmware": {"name": "Version Firmware"},
+            "voltage": {"name": "Voltage"}
+        }
+    },
     "options": {
         "step": {
             "init": {
