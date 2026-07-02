@@ -31,7 +31,8 @@ jobs:
 
       - name: Set version number
         run: |
-          python3 ${{ github.workspace }}/manage/update_manifest.py --version ${{ steps.version.outputs.version }}
+          version="${{ steps.version.outputs.version }}"
+          python3 ${{ github.workspace }}/manage/update_manifest.py --version "${version#v}"
 
       - name: Upload zip to action
         uses: actions/upload-artifact@v4.3.3

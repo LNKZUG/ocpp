@@ -1,5 +1,13 @@
 # Release Notes
 
+## v0.5.6.11 - HACS release version fix
+
+Fixes the HACS release package generated for the user and wallbox counter release.
+
+### Fixed
+
+* Publishes release ZIP manifests with a plain semantic version such as `0.5.6.11` instead of a tag-style version such as `v0.5.6.10`.
+
 ## v0.5.6.10 - User and wallbox monthly counters
 
 Improves user attribution and monthly energy tracking for managed OCPP users and wallboxes.
