@@ -18,7 +18,11 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 import websockets
 
 from custom_components.ocpp import async_setup_entry, async_unload_entry
-from custom_components.ocpp.api import ChargePoint as OcppChargePoint, Metric
+from custom_components.ocpp.api import (
+    ChargePoint as OcppChargePoint,
+    Metric,
+    truncate_status_notification_info,
+)
 from custom_components.ocpp.button import BUTTONS
 from custom_components.ocpp.const import DOMAIN as OCPP_DOMAIN
 from custom_components.ocpp.enums import (
@@ -72,6 +76,17 @@ async def test_supported_features_timeout_defaults_to_core():
 
     assert charge_point._attr_supported_features == prof.CORE
     assert charge_point._metrics[cdet.features.value].value == prof.CORE
+
+
+def test_truncate_status_notification_info():
+    """Test non-compliant StatusNotification info values are trimmed."""
+    payload = {"info": "H8.Charge station gun signal is error, please reinsert"}
+
+    assert truncate_status_notification_info(
+        Action.status_notification.value, payload
+    )
+    assert payload["info"] == "H8.Charge station gun signal is error, please rein"
+    assert len(payload["info"]) == 50
 
 
 async def test_evse_suspended_auto_stop_sends_remote_stop():

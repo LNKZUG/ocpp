@@ -1,5 +1,16 @@
 # Release Notes
 
+## v0.5.6.8 - Home Assistant 2026 compatibility fixes
+
+Fixes issues found after testing `v0.5.6.7` on the latest Home Assistant release.
+
+### Fixed
+
+* Fixes the `Benutzer` configure dialog failing with `property 'config_entry' of 'OptionsFlowHandler' object has no setter`.
+* Adds separate user detail sensors for status, idTags, last session energy and last session finish time instead of exposing the full user list as one long sensor attribute.
+* Fixes the charger device `via_device` reference so Home Assistant no longer warns about a missing central system device.
+* Handles DUOSIDA/Entratek `StatusNotification.info` values that exceed the OCPP 1.6 maximum length by trimming the optional info field before validation.
+
 ## v0.5.6.7 - Duosida transaction recovery and user registry UI
 
 Improves the known working `v0.5.6.x` train for DUOSIDA/Entratek chargers and moves user management fully into Home Assistant integration UI.

@@ -131,7 +131,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
     def __init__(self, config_entry):
         """Initialize options flow."""
-        self.config_entry = config_entry
+        self._config_entry = config_entry
         self._user_id = None
 
     async def async_step_init(self, user_input=None):
@@ -143,9 +143,9 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
     async def async_step_settings(self, user_input=None):
         """Configure OCPP user defaults."""
-        current_status = self.config_entry.options.get(
+        current_status = self._config_entry.options.get(
             CONF_DEFAULT_AUTH_STATUS,
-            self.config_entry.data.get(
+            self._config_entry.data.get(
                 CONF_DEFAULT_AUTH_STATUS, AuthorizationStatus.accepted.value
             ),
         )
@@ -154,7 +154,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             return self.async_create_entry(
                 title="",
                 data={
-                    **self.config_entry.options,
+                    **self._config_entry.options,
                     CONF_DEFAULT_AUTH_STATUS: user_input[CONF_DEFAULT_AUTH_STATUS],
                 },
             )
@@ -191,7 +191,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 await registry.async_add_user(
                     user_input["name"], id_tags, user_input["active"]
                 )
-                return self.async_create_entry(title="", data=self.config_entry.options)
+                return self.async_create_entry(title="", data=self._config_entry.options)
 
         return self.async_show_form(
             step_id="add_user",
@@ -248,7 +248,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     id_tags=id_tags,
                     active=user_input["active"],
                 )
-                return self.async_create_entry(title="", data=self.config_entry.options)
+                return self.async_create_entry(title="", data=self._config_entry.options)
 
         return self.async_show_form(
             step_id="edit_user_form",
@@ -278,7 +278,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             await registry.async_update_user(
                 user["user_id"], active=not user.get("active", True)
             )
-            return self.async_create_entry(title="", data=self.config_entry.options)
+            return self.async_create_entry(title="", data=self._config_entry.options)
 
         return self.async_show_form(
             step_id="toggle_user",

@@ -20,7 +20,7 @@ import voluptuous as vol
 import websockets.protocol
 import websockets.server
 
-from ocpp.exceptions import NotImplementedError
+from ocpp.exceptions import NotImplementedError, TypeConstraintViolationError
 from ocpp.messages import CallError
 from ocpp.routing import on
 from ocpp.v16 import ChargePoint as cp, call, call_result
@@ -118,6 +118,17 @@ logging.getLogger(DOMAIN).setLevel(logging.INFO)
 # logging.getLogger("websockets").setLevel(logging.DEBUG)
 
 TIME_MINUTES = UnitOfTime.MINUTES
+
+
+def truncate_status_notification_info(action, payload: dict, max_length: int = 50):
+    """Trim too-long StatusNotification info fields for non-compliant chargers."""
+    if action != Action.status_notification.value:
+        return False
+    info = payload.get("info")
+    if not isinstance(info, str) or len(info) <= max_length:
+        return False
+    payload["info"] = info[:max_length]
+    return True
 
 UFW_SERVICE_DATA_SCHEMA = vol.Schema(
     {
@@ -1130,6 +1141,16 @@ class ChargePoint(cp):
     async def _handle_call(self, msg):
         try:
             await super()._handle_call(msg)
+        except TypeConstraintViolationError:
+            if truncate_status_notification_info(msg.action, msg.payload):
+                _LOGGER.warning(
+                    "%s sent StatusNotification.info longer than OCPP allows; "
+                    "truncated to 50 characters",
+                    self.id,
+                )
+                await super()._handle_call(msg)
+                return
+            raise
         except NotImplementedError as e:
             response = msg.create_call_error(e).to_json()
             await self._send(response)
