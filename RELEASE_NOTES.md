@@ -1,5 +1,25 @@
 # Release Notes
 
+## v0.5.6.9 - User management and Entratek sensor cleanup
+
+Improves the known working Entratek/DUOSIDA release train with a cleaner Home Assistant UI and more complete user-management options.
+
+### Added
+
+* Adds an options-flow path for deleting managed OCPP users.
+* Adds missing German and English labels for buttons, number entities, switches, user-management actions and additional OCPP sensors.
+* Adds German umlauts to German OCPP translations.
+
+### Fixed
+
+* Fixes options-flow navigation so user-management screens can return to the correct menu after editing or adding users.
+* Keeps fallback entity names while still using Home Assistant translation keys.
+
+### Changed
+
+* Disables irrelevant or unsupported Entratek/DUOSIDA metrics by default so they are hidden unless explicitly enabled.
+* Leaves useful live metrics such as import current, offered current, import power, import energy, voltage and temperature enabled by default.
+
 ## v0.5.6.8 - Home Assistant 2026 compatibility fixes
 
 Fixes issues found after testing `v0.5.6.7` on the latest Home Assistant release.
