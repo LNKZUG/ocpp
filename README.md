@@ -52,10 +52,18 @@ Add users through Home Assistant actions:
 
 Users are matched by OCPP `idTag`.
 
-For every managed user the integration creates one total energy sensor:
+For every managed user the integration creates energy sensors:
 
 ```text
 OCPP <user name> Ladeenergie
+OCPP <user name> Ladeenergie Monat
 ```
 
-The sensor adds completed charging sessions across all configured chargers. Existing helpers and manually created sensors are not changed.
+The total sensor adds completed charging sessions across all configured chargers. The monthly sensor resets on the Home Assistant local monthly cycle. Existing helpers and manually created sensors are not changed.
+
+Each wallbox also exposes the currently mapped managed user during an active transaction:
+
+```text
+OCPP <charger name> Angemeldeter Nutzer
+OCPP <charger name> Ladeenergie Monat
+```

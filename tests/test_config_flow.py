@@ -284,6 +284,74 @@ async def test_user_registry_delete_user_removes_user_and_sessions(hass):
     registry.notify_updated.assert_called_once()
 
 
+def test_user_registry_adds_session_energy_to_current_month(hass):
+    """Test user session energy is tracked in total and monthly counters."""
+    registry = OcppUserRegistry(hass)
+    registry.users = {
+        "user-1": {
+            "user_id": "user-1",
+            "name": "Test User",
+            "id_tags": ["ABC"],
+            "energy_kwh": 10.0,
+            "monthly_energy_kwh": 4.0,
+            "monthly_energy_period": "2026-07",
+        }
+    }
+    registry.sessions = {
+        "charger:1": {
+            "transaction_id": 1,
+            "user_id": "user-1",
+            "id_tag": "ABC",
+            "cp_id": "charger",
+            "meter_start_kwh": 10.0,
+        }
+    }
+    registry.current_month_period = Mock(return_value="2026-07")
+    registry.schedule_save = Mock()
+    registry.notify_updated = Mock()
+
+    registry.record_stop_transaction(1, "charger", 11.25)
+
+    assert registry.users["user-1"]["energy_kwh"] == 11.25
+    assert registry.users["user-1"]["monthly_energy_kwh"] == 5.25
+    assert registry.users["user-1"]["monthly_energy_period"] == "2026-07"
+    registry.schedule_save.assert_called_once()
+    registry.notify_updated.assert_called_once()
+
+
+def test_user_registry_resets_monthly_counter_on_month_change(hass):
+    """Test monthly user energy resets when closing a session in a new month."""
+    registry = OcppUserRegistry(hass)
+    registry.users = {
+        "user-1": {
+            "user_id": "user-1",
+            "name": "Test User",
+            "id_tags": ["ABC"],
+            "energy_kwh": 10.0,
+            "monthly_energy_kwh": 4.0,
+            "monthly_energy_period": "2026-06",
+        }
+    }
+    registry.sessions = {
+        "charger:1": {
+            "transaction_id": 1,
+            "user_id": "user-1",
+            "id_tag": "ABC",
+            "cp_id": "charger",
+            "meter_start_kwh": 10.0,
+        }
+    }
+    registry.current_month_period = Mock(return_value="2026-07")
+    registry.schedule_save = Mock()
+    registry.notify_updated = Mock()
+
+    registry.record_stop_transaction(1, "charger", 11.25)
+
+    assert registry.users["user-1"]["energy_kwh"] == 11.25
+    assert registry.users["user-1"]["monthly_energy_kwh"] == 1.25
+    assert registry.users["user-1"]["monthly_energy_period"] == "2026-07"
+
+
 # In this case, we want to simulate a failure during the config flow.
 # We use the `error_on_get_data` mock instead of `bypass_get_data`
 # (note the function parameters) to raise an Exception during

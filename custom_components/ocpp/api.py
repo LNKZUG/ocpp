@@ -16,6 +16,7 @@ from homeassistant.const import STATE_OK, STATE_UNAVAILABLE, STATE_UNKNOWN, Unit
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry, entity_component, entity_registry
 import homeassistant.helpers.config_validation as cv
+from homeassistant.util import dt as dt_util
 import voluptuous as vol
 import websockets.protocol
 import websockets.server
@@ -427,6 +428,7 @@ class ChargePoint(cp):
         self._metrics[cdet.identifier.value].value = id
         self._metrics[csess.session_time.value].unit = TIME_MINUTES
         self._metrics[csess.session_energy.value].unit = UnitOfMeasure.kwh.value
+        self._metrics[csess.monthly_energy.value].unit = UnitOfMeasure.kwh.value
         self._metrics[csess.meter_start.value].unit = UnitOfMeasure.kwh.value
         self._attr_supported_features = prof.NONE
         self._metrics[cstat.reconnects.value].value: int = 0
@@ -1604,6 +1606,42 @@ class ChargePoint(cp):
             )
         return auth_status
 
+    @staticmethod
+    def current_month_period() -> str:
+        """Return the current Home Assistant local month period."""
+        return dt_util.now().strftime("%Y-%m")
+
+    def ensure_current_monthly_energy(self) -> None:
+        """Reset or restore the monthly wallbox energy counter."""
+        period = self.current_month_period()
+        metric = self._metrics[csess.monthly_energy.value]
+        if metric.extra_attr.get("period") == period and metric.value is not None:
+            return
+
+        value = 0.0
+        restored_period = self.get_ha_metric_attr(csess.monthly_energy.value, "period")
+        restored_value = self.get_ha_metric(csess.monthly_energy.value)
+        if restored_period == period and restored_value is not None:
+            try:
+                value = float(restored_value)
+            except (TypeError, ValueError):
+                value = 0.0
+
+        metric.value = value
+        metric.unit = UnitOfMeasure.kwh.value
+        metric.extra_attr = {
+            "period": period,
+            "reset_cycle": "monthly",
+        }
+
+    def add_monthly_energy(self, session_energy_kwh: float | None) -> None:
+        """Add one completed session to the monthly wallbox energy counter."""
+        if session_energy_kwh is None or session_energy_kwh < 0:
+            return
+        self.ensure_current_monthly_energy()
+        metric = self._metrics[csess.monthly_energy.value]
+        metric.value = round(float(metric.value or 0.0) + session_energy_kwh, 6)
+
     @on(Action.authorize)
     def on_authorize(self, id_tag, **kwargs):
         """Handle an Authorization request."""
@@ -1617,11 +1655,21 @@ class ChargePoint(cp):
 
         auth_status = self.get_authorization_status(id_tag)
         if auth_status == AuthorizationStatus.accepted.value:
+            user = None
+            if self.central.user_registry is not None:
+                user = self.central.user_registry.get_user_for_id_tag(id_tag)
             self._cancel_auto_stop()
             self.active_transaction_id = int(time.time())
             self._charger_reports_session_energy = False
             self._metrics[cstat.id_tag.value].value = id_tag
             self._metrics[cstat.stop_reason.value].value = ""
+            self._metrics[csess.current_user.value].value = (
+                user["name"] if user is not None else None
+            )
+            self._metrics[csess.current_user.value].extra_attr = {
+                "id_tag": id_tag,
+                "user_id": user["user_id"] if user is not None else None,
+            }
             self._metrics[csess.transaction_id.value].value = self.active_transaction_id
             self._metrics[csess.session_energy.value].value = None
             meter_start_kwh = int(meter_start) / 1000
@@ -1652,9 +1700,11 @@ class ChargePoint(cp):
             _LOGGER.error(
                 "Stop transaction received for unknown transaction id=%i",
                 transaction_id,
-            )
+        )
         self.active_transaction_id = 0
         self._cancel_auto_stop()
+        self._metrics[csess.current_user.value].value = None
+        self._metrics[csess.current_user.value].extra_attr = {}
         self._metrics[cstat.stop_reason.value].value = kwargs.get(om.reason.name, None)
         if (
             self._metrics[csess.meter_start.value].value is not None
@@ -1663,6 +1713,10 @@ class ChargePoint(cp):
             self._metrics[csess.session_energy.value].value = int(
                 meter_stop
             ) / 1000 - float(self._metrics[csess.meter_start.value].value)
+        session_energy = self._metrics[csess.session_energy.value].value
+        self.add_monthly_energy(
+            float(session_energy) if session_energy is not None else None
+        )
         if Measurand.current_import.value in self._metrics:
             self._metrics[Measurand.current_import.value].value = 0
         if Measurand.power_active_import.value in self._metrics:
@@ -1676,7 +1730,6 @@ class ChargePoint(cp):
         if Measurand.power_reactive_export.value in self._metrics:
             self._metrics[Measurand.power_reactive_export.value].value = 0
         if self.central.user_registry is not None:
-            session_energy = self._metrics[csess.session_energy.value].value
             self.central.user_registry.record_stop_transaction(
                 transaction_id,
                 self.central.cpid,
@@ -1726,6 +1779,20 @@ class ChargePoint(cp):
         if value == STATE_UNAVAILABLE or value == STATE_UNKNOWN:
             return None
         return value
+
+    def get_ha_metric_attr(self, measurand: str, attr: str):
+        """Return last known HA state attribute for given measurand."""
+        entity_id = "sensor." + "_".join(
+            [self.central.cpid.lower(), measurand.lower().replace(".", "_")]
+        )
+        try:
+            state = self.hass.states.get(entity_id)
+        except Exception as e:
+            _LOGGER.debug(f"An error occurred when getting entity state from HA: {e}")
+            return None
+        if state is None:
+            return None
+        return state.attributes.get(attr)
 
     def get_extra_attr(self, measurand: str):
         """Return last known extra attributes for given measurand."""

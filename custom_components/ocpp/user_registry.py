@@ -11,6 +11,7 @@ from homeassistant.const import UnitOfEnergy
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
 from homeassistant.util import slugify
 
 from ocpp.v16.enums import AuthorizationStatus
@@ -31,6 +32,7 @@ class OcppUserRegistry:
         self._store = Store(hass, STORAGE_VERSION, STORAGE_USER_REGISTRY)
         self.users: dict[str, dict[str, Any]] = {}
         self.sessions: dict[str, dict[str, Any]] = {}
+        self.deleted_id_tags: list[str] = []
         self._loaded = False
 
     async def async_load(self) -> None:
@@ -44,6 +46,7 @@ class OcppUserRegistry:
 
         self.users = data.get("users", {})
         self.sessions = data.get("sessions", {})
+        self.deleted_id_tags = data.get("deleted_id_tags", [])
         self._loaded = True
 
     async def async_save(self) -> None:
@@ -52,6 +55,7 @@ class OcppUserRegistry:
             {
                 "users": self.users,
                 "sessions": self.sessions,
+                "deleted_id_tags": self.deleted_id_tags,
             }
         )
 
@@ -80,6 +84,19 @@ class OcppUserRegistry:
                 tags.append(tag)
         return tags
 
+    @staticmethod
+    def current_month_period() -> str:
+        """Return the current Home Assistant local month period."""
+        return dt_util.now().strftime("%Y-%m")
+
+    @callback
+    def ensure_current_month(self, user: dict[str, Any]) -> None:
+        """Reset a user's monthly energy when the local month changes."""
+        period = self.current_month_period()
+        if user.get("monthly_energy_period") != period:
+            user["monthly_energy_period"] = period
+            user["monthly_energy_kwh"] = 0.0
+
     @callback
     def list_users(self) -> list[dict[str, Any]]:
         """Return users sorted by name."""
@@ -98,6 +115,22 @@ class OcppUserRegistry:
             if normalized in user.get("id_tags", []):
                 return user
         return None
+
+    @callback
+    def _block_deleted_id_tags(self, id_tags: list[str]) -> None:
+        """Remember removed idTags so permissive defaults cannot allow them."""
+        for id_tag in id_tags:
+            if id_tag and id_tag not in self.deleted_id_tags:
+                self.deleted_id_tags.append(id_tag)
+
+    @callback
+    def _unblock_id_tags(self, id_tags: list[str]) -> None:
+        """Allow explicitly assigned idTags again."""
+        if not id_tags:
+            return
+        self.deleted_id_tags = [
+            id_tag for id_tag in self.deleted_id_tags if id_tag not in id_tags
+        ]
 
     @callback
     def find_conflicting_id_tags(
@@ -119,6 +152,8 @@ class OcppUserRegistry:
         """Return an authorization status for a managed idTag."""
         user = self.get_user_for_id_tag(id_tag)
         if user is None:
+            if self.normalize_id_tag(id_tag) in self.deleted_id_tags:
+                return AuthorizationStatus.blocked.value
             return None
         if user.get("active", True):
             return AuthorizationStatus.accepted.value
@@ -144,8 +179,11 @@ class OcppUserRegistry:
             "id_tags": parsed_tags,
             "active": bool(active),
             "energy_kwh": 0.0,
+            "monthly_energy_kwh": 0.0,
+            "monthly_energy_period": self.current_month_period(),
             "created_at": time.time(),
         }
+        self._unblock_id_tags(parsed_tags)
         await self.async_save()
         self.notify_updated()
         return user_id
@@ -159,10 +197,16 @@ class OcppUserRegistry:
     ) -> None:
         """Update a managed OCPP user."""
         user = self.users[user_id]
+        old_id_tags = user.get("id_tags", [])
         if name is not None:
             user["name"] = str(name).strip()
         if id_tags is not None:
-            user["id_tags"] = self.parse_id_tags(id_tags)
+            parsed_tags = self.parse_id_tags(id_tags)
+            self._block_deleted_id_tags(
+                [id_tag for id_tag in old_id_tags if id_tag not in parsed_tags]
+            )
+            self._unblock_id_tags(parsed_tags)
+            user["id_tags"] = parsed_tags
         if active is not None:
             user["active"] = bool(active)
         await self.async_save()
@@ -170,7 +214,8 @@ class OcppUserRegistry:
 
     async def async_delete_user(self, user_id: str) -> None:
         """Delete a managed OCPP user."""
-        self.users.pop(user_id)
+        user = self.users.pop(user_id)
+        self._block_deleted_id_tags(user.get("id_tags", []))
         self.sessions = {
             session_key: session
             for session_key, session in self.sessions.items()
@@ -229,8 +274,13 @@ class OcppUserRegistry:
             )
             return
 
+        self.ensure_current_month(user)
         user["energy_kwh"] = round(
             float(user.get("energy_kwh", 0.0)) + float(session_energy_kwh),
+            6,
+        )
+        user["monthly_energy_kwh"] = round(
+            float(user.get("monthly_energy_kwh", 0.0)) + float(session_energy_kwh),
             6,
         )
         user["last_session_energy_kwh"] = round(float(session_energy_kwh), 6)
@@ -257,4 +307,5 @@ async def async_get_user_registry(hass: HomeAssistant) -> OcppUserRegistry:
 
 USER_SENSOR_DEVICE_CLASS = SensorDeviceClass.ENERGY
 USER_SENSOR_STATE_CLASS = SensorStateClass.TOTAL_INCREASING
+USER_MONTHLY_SENSOR_STATE_CLASS = SensorStateClass.TOTAL
 USER_SENSOR_UNIT = UnitOfEnergy.KILO_WATT_HOUR

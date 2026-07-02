@@ -1,5 +1,19 @@
 # Release Notes
 
+## v0.5.6.10 - User and wallbox monthly counters
+
+Improves user attribution and monthly energy tracking for managed OCPP users and wallboxes.
+
+### Added
+
+* Adds one monthly kWh counter per managed OCPP user.
+* Adds a wallbox sensor for the currently mapped managed user during active charging.
+* Adds one monthly kWh counter per wallbox.
+
+### Changed
+
+* Moves auto-stop switch and delay entities into the Home Assistant configuration category.
+
 ## v0.5.6.9 - User management and Entratek sensor cleanup
 
 Improves the known working Entratek/DUOSIDA release train with a cleaner Home Assistant UI and more complete user-management options.

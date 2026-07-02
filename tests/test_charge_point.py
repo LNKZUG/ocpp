@@ -28,6 +28,7 @@ from custom_components.ocpp.const import DOMAIN as OCPP_DOMAIN
 from custom_components.ocpp.enums import (
     ConfigurationKey,
     HAChargerDetails as cdet,
+    HAChargerSession as csess,
     HAChargerStatuses as cstat,
     HAChargerServices as csvcs,
     Profiles as prof,
@@ -127,6 +128,82 @@ async def test_evse_suspended_auto_stop_sends_remote_stop():
 
     assert stopped is True
     assert triggered is True
+
+
+def test_current_user_metric_maps_id_tag_to_managed_user():
+    """Test current wallbox user is mapped from the transaction idTag."""
+
+    class UserRegistryStub:
+        """Minimal user registry test double."""
+
+        def __init__(self):
+            self.stop_recorded = False
+
+        def get_authorization_status(self, id_tag):
+            """Accept the managed idTag."""
+            return AuthorizationStatus.accepted.value
+
+        def get_user_for_id_tag(self, id_tag):
+            """Return a managed user for the idTag."""
+            if id_tag == "ABC":
+                return {"user_id": "lukas", "name": "Lukas"}
+            return None
+
+        def record_start_transaction(self, *args):
+            """Record start transaction calls."""
+
+        def record_stop_transaction(self, *args):
+            """Record stop transaction calls."""
+            self.stop_recorded = True
+
+    class HassStub:
+        """Minimal Home Assistant test double."""
+
+        def async_create_task(self, task):
+            """Close scheduled coroutine from central.update."""
+            task.close()
+
+    async def update(_cpid):
+        return None
+
+    charge_point = object.__new__(OcppChargePoint)
+    charge_point.id = "charger"
+    charge_point.hass = HassStub()
+    charge_point.central = SimpleNamespace(
+        cpid="charger",
+        config={},
+        user_registry=UserRegistryStub(),
+        update=update,
+    )
+    charge_point._metrics = defaultdict(lambda: Metric(None, None))
+    charge_point._cancel_auto_stop = lambda: None
+
+    result = charge_point.on_start_transaction(
+        connector_id=1,
+        id_tag="ABC",
+        meter_start=1000,
+    )
+
+    assert result.id_tag_info["status"] == AuthorizationStatus.accepted.value
+    assert charge_point._metrics[csess.current_user.value].value == "Lukas"
+    assert charge_point._metrics[csess.current_user.value].extra_attr == {
+        "id_tag": "ABC",
+        "user_id": "lukas",
+    }
+
+    charge_point.on_stop_transaction(
+        meter_stop=2000,
+        timestamp=datetime.now(tz=timezone.utc).isoformat(),
+        transaction_id=charge_point.active_transaction_id,
+    )
+
+    assert charge_point._metrics[csess.current_user.value].value is None
+    assert charge_point._metrics[csess.current_user.value].extra_attr == {}
+    assert charge_point._metrics[csess.monthly_energy.value].value == 1.0
+    assert charge_point._metrics[csess.monthly_energy.value].extra_attr[
+        "reset_cycle"
+    ] == "monthly"
+    assert charge_point.central.user_registry.stop_recorded is True
 
 
 @pytest.mark.timeout(90)  # Set timeout for this test

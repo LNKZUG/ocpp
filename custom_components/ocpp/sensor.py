@@ -37,6 +37,7 @@ from .const import (
 )
 from .enums import HAChargerDetails, HAChargerSession, HAChargerStatuses
 from .user_registry import (
+    USER_MONTHLY_SENSOR_STATE_CLASS,
     USER_SENSOR_DEVICE_CLASS,
     USER_SENSOR_STATE_CLASS,
     USER_SENSOR_UNIT,
@@ -222,13 +223,27 @@ class ChargePointMetric(RestoreSensor, SensorEntity):
     @property
     def extra_state_attributes(self):
         """Return the state attributes."""
-        return self.central_system.get_extra_attr(self.cp_id, self.metric)
+        attributes = (
+            self.central_system.get_extra_attr(self.cp_id, self.metric)
+            or self._extra_attr
+            or {}
+        )
+        if self.metric == HAChargerSession.monthly_energy.value:
+            period = homeassistant.util.dt.now().strftime("%Y-%m")
+            if attributes.get("period") != period:
+                return {
+                    "period": period,
+                    "reset_cycle": "monthly",
+                }
+        return attributes
 
     @property
     def state_class(self):
         """Return the state class of the sensor."""
         state_class = None
-        if self.device_class is SensorDeviceClass.ENERGY:
+        if self.metric == HAChargerSession.monthly_energy.value:
+            state_class = SensorStateClass.TOTAL
+        elif self.device_class is SensorDeviceClass.ENERGY:
             state_class = SensorStateClass.TOTAL_INCREASING
         elif self.device_class in [
             SensorDeviceClass.CURRENT,
@@ -249,7 +264,9 @@ class ChargePointMetric(RestoreSensor, SensorEntity):
     def device_class(self):
         """Return the device class of the sensor."""
         device_class = None
-        if self.metric.lower().startswith("current."):
+        if self.metric == HAChargerSession.current_user.value:
+            device_class = None
+        elif self.metric.lower().startswith("current."):
             device_class = SensorDeviceClass.CURRENT
         elif self.metric.lower().startswith("voltage"):
             device_class = SensorDeviceClass.VOLTAGE
@@ -290,6 +307,18 @@ class ChargePointMetric(RestoreSensor, SensorEntity):
     def native_value(self):
         """Return the state of the sensor, rounding if a number."""
         value = self.central_system.get_metric(self.cp_id, self.metric)
+        if self.metric == HAChargerSession.current_user.value and value is None:
+            return None
+        if self.metric == HAChargerSession.monthly_energy.value:
+            attributes = (
+                self.central_system.get_extra_attr(self.cp_id, self.metric)
+                or self._extra_attr
+                or {}
+            )
+            period = homeassistant.util.dt.now().strftime("%Y-%m")
+            if attributes.get("period") != period:
+                self._attr_native_value = 0.0
+                return self._attr_native_value
         if value is not None:
             self._attr_native_value = value
         return self._attr_native_value
@@ -312,6 +341,9 @@ class ChargePointMetric(RestoreSensor, SensorEntity):
         if restored := await self.async_get_last_sensor_data():
             self._attr_native_value = restored.native_value
             self._attr_native_unit_of_measurement = restored.native_unit_of_measurement
+        if self.metric == HAChargerSession.monthly_energy.value:
+            if restored_state := await self.async_get_last_state():
+                self._extra_attr = dict(restored_state.attributes)
 
         async_dispatcher_connect(
             self._hass, DATA_UPDATED, self._schedule_immediate_update
@@ -326,6 +358,7 @@ def user_entities(hass: HomeAssistant, registry, user_id: str) -> list[SensorEnt
     """Return all entities for one managed OCPP user."""
     return [
         UserEnergySensor(hass, registry, user_id),
+        UserMonthlyEnergySensor(hass, registry, user_id),
         UserStatusSensor(hass, registry, user_id),
         UserIdTagsSensor(hass, registry, user_id),
         UserLastSessionEnergySensor(hass, registry, user_id),
@@ -409,6 +442,42 @@ class UserEnergySensor(UserSensorBase):
         if user is None:
             return None
         return user.get("energy_kwh", 0.0)
+
+
+class UserMonthlyEnergySensor(UserSensorBase):
+    """Monthly OCPP charging energy for one managed user."""
+
+    _attr_device_class = USER_SENSOR_DEVICE_CLASS
+    _attr_icon = ICON
+    _attr_native_unit_of_measurement = USER_SENSOR_UNIT
+    _attr_state_class = USER_MONTHLY_SENSOR_STATE_CLASS
+    _name_suffix = "Ladeenergie Monat"
+
+    def __init__(self, hass: HomeAssistant, registry, user_id: str):
+        """Initialize a user monthly energy sensor."""
+        super().__init__(hass, registry, user_id)
+        self._attr_unique_id = f"{DOMAIN}_user_{user_id}_monthly_energy"
+
+    @property
+    def native_value(self):
+        """Return charging energy for the current local month."""
+        user = self.user
+        if user is None:
+            return None
+        if user.get("monthly_energy_period") != self.registry.current_month_period():
+            return 0.0
+        return user.get("monthly_energy_kwh", 0.0)
+
+    @property
+    def extra_state_attributes(self):
+        """Return monthly billing period metadata."""
+        user = self.user
+        if user is None:
+            return {}
+        return {
+            "period": self.registry.current_month_period(),
+            "reset_cycle": "monthly",
+        }
 
 
 class UserStatusSensor(UserSensorBase):

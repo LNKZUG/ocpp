@@ -2,13 +2,17 @@
 
 from datetime import datetime
 
+from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
+
 from custom_components.ocpp.const import DEFAULT_DISABLED_METRICS
+from custom_components.ocpp.enums import HAChargerSession
 from custom_components.ocpp.sensor import (
     ChargePointMetric,
     OcppSensorDescription,
     UserIdTagsSensor,
     UserLastSessionEnergySensor,
     UserLastSessionFinishedSensor,
+    UserMonthlyEnergySensor,
     UserStatusSensor,
     metric_display_name,
     metric_translation_key,
@@ -33,6 +37,8 @@ class RegistryStub:
             "id_tags": ["02BE5E0E"],
             "active": True,
             "energy_kwh": 12.5,
+            "monthly_energy_kwh": 3.5,
+            "monthly_energy_period": "2026-07",
             "last_session_energy_kwh": 1.25,
             "last_session_finished_at": 1000,
         }
@@ -43,6 +49,11 @@ class RegistryStub:
             return self.user
         return None
 
+    @staticmethod
+    def current_month_period():
+        """Return the test period."""
+        return "2026-07"
+
 
 def test_metric_display_name():
     """Test generated fallback names for sensor metrics."""
@@ -52,6 +63,8 @@ def test_metric_display_name():
     assert metric_display_name("SoC") == "SoC"
     assert metric_display_name("RPM") == "RPM"
     assert metric_display_name("Transaction.Id") == "Transaction ID"
+    assert metric_display_name("Current.User") == "Current User"
+    assert metric_display_name("Energy.Month") == "Energy Month"
 
 
 def test_unsupported_metrics_are_disabled_by_default():
@@ -87,17 +100,65 @@ def test_unsupported_metrics_are_disabled_by_default():
     assert active_entity._attr_entity_registry_enabled_default is True
 
 
+def test_wallbox_current_user_and_monthly_energy_sensor_classes():
+    """Test wallbox user and monthly energy metrics use the correct classes."""
+    current_user = ChargePointMetric(
+        None,
+        CentralSystemStub(),
+        "charger",
+        OcppSensorDescription(
+            key="current_user",
+            name="Current User",
+            metric=HAChargerSession.current_user.value,
+            translation_key="current_user",
+        ),
+    )
+    monthly_energy = ChargePointMetric(
+        None,
+        CentralSystemStub(),
+        "charger",
+        OcppSensorDescription(
+            key="energy_month",
+            name="Energy Month",
+            metric=HAChargerSession.monthly_energy.value,
+            translation_key="energy_month",
+        ),
+    )
+
+    assert current_user.device_class is None
+    assert current_user.state_class is None
+    assert monthly_energy.device_class == SensorDeviceClass.ENERGY
+    assert monthly_energy.state_class == SensorStateClass.TOTAL
+
+
 def test_user_entities_expose_user_details():
     """Test managed users expose details as separate entities."""
     entities = user_entities(None, RegistryStub(), "lukas")
 
     assert any(isinstance(entity, UserStatusSensor) for entity in entities)
     assert any(isinstance(entity, UserIdTagsSensor) for entity in entities)
+    assert any(isinstance(entity, UserMonthlyEnergySensor) for entity in entities)
     assert any(isinstance(entity, UserLastSessionEnergySensor) for entity in entities)
     assert any(isinstance(entity, UserLastSessionFinishedSensor) for entity in entities)
 
     values = {entity._attr_unique_id: entity.native_value for entity in entities}
+    assert values["ocpp_user_lukas_energy"] == 12.5
+    assert values["ocpp_user_lukas_monthly_energy"] == 3.5
     assert values["ocpp_user_lukas_status"] == "Accepted"
     assert values["ocpp_user_lukas_id_tags"] == "02BE5E0E"
     assert values["ocpp_user_lukas_last_session_energy"] == 1.25
     assert isinstance(values["ocpp_user_lukas_last_session_finished"], datetime)
+
+
+def test_user_monthly_energy_sensor_resets_stale_period():
+    """Test monthly user energy displays zero for an old period."""
+    registry = RegistryStub()
+    registry.user["monthly_energy_period"] = "2026-06"
+
+    entity = UserMonthlyEnergySensor(None, registry, "lukas")
+
+    assert entity.native_value == 0.0
+    assert entity.extra_state_attributes == {
+        "period": "2026-07",
+        "reset_cycle": "monthly",
+    }

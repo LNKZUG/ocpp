@@ -55,8 +55,10 @@ class HAChargerSession(str, Enum):
     """Charger session information to report in home assistant."""
 
     transaction_id = "Transaction.Id"
+    current_user = "Current.User"
     session_time = "Time.Session"  # in min
     session_energy = "Energy.Session"  # in kWh
+    monthly_energy = "Energy.Month"  # in kWh
     meter_start = "Energy.Meter.Start"  # in kWh
 
 
