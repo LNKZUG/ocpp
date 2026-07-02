@@ -1,5 +1,25 @@
 # Release Notes
 
+## v0.5.6.7 - Duosida transaction recovery and user registry UI
+
+Improves the known working `v0.5.6.x` train for DUOSIDA/Entratek chargers and moves user management fully into Home Assistant integration UI.
+
+### Added
+
+* Configurable automatic `RemoteStopTransaction` recovery when a charger remains in `SuspendedEVSE` or reports `MeterValues` with `Interruption.Begin` after the EV-side charge stop.
+* New `Auto Stop On EVSE Suspended` switch and `Auto Stop Delay` number entity for tuning the recovery behavior from Home Assistant.
+* Separate `Benutzer` integration entry for global OCPP users instead of showing users under one central system device.
+* `OCPP Benutzer` overview sensor with all managed users, idTags, active/blocked status, and energy metadata.
+* Options-flow user management for adding, editing, activating, and deactivating OCPP users.
+* Options-flow setting for the default authorization status of unknown idTags, replacing the need for `default_authorization_status` in `configuration.yaml`.
+
+### Fixed
+
+* Prevents DUOSIDA chargers from staying indefinitely in `Wait` after the vehicle stops charging and the plug is removed.
+* Keeps charger status truthful by sending OCPP `RemoteStopTransaction` instead of faking `Available` in Home Assistant.
+* Adds readable fallback names for OCPP sensors so entities no longer all appear as `charger` when translations are not resolved.
+* Handles chargers that time out on `SupportedFeatureProfiles` by defaulting to the OCPP Core profile instead of dropping the websocket connection.
+
 ## v0.5.6.6 - Release notes backfill
 
 Backfills GitHub/HACS release notes for all `v0.5.6.x` releases from `RELEASE_NOTES.md` whenever a new release is published.

@@ -1,8 +1,12 @@
 """Adds config flow for ocpp."""
 from homeassistant import config_entries
+from homeassistant.core import callback
 import voluptuous as vol
 
+from ocpp.v16.enums import AuthorizationStatus
+
 from .const import (
+    CONF_DEFAULT_AUTH_STATUS,
     CONF_CPID,
     CONF_CSID,
     CONF_FORCE_SMART_CHARGING,
@@ -38,7 +42,11 @@ from .const import (
     DEFAULT_WEBSOCKET_PING_TIMEOUT,
     DEFAULT_WEBSOCKET_PING_TRIES,
     DOMAIN,
+    ENTRY_TYPE,
+    ENTRY_TYPE_CENTRAL,
+    ENTRY_TYPE_USERS,
 )
+from .user_registry import async_get_user_registry
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
@@ -95,8 +103,196 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Todo: validate the user input
             self._data = user_input
             self._data[CONF_MONITORED_VARIABLES] = DEFAULT_MONITORED_VARIABLES
+            self._data[ENTRY_TYPE] = ENTRY_TYPE_CENTRAL
             return self.async_create_entry(title=self._data[CONF_CSID], data=self._data)
 
         return self.async_show_form(
             step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
+        )
+
+    async def async_step_import(self, user_input=None):
+        """Create internal entries imported by the integration."""
+        if user_input and user_input.get(ENTRY_TYPE) == ENTRY_TYPE_USERS:
+            await self.async_set_unique_id(f"{DOMAIN}_{ENTRY_TYPE_USERS}")
+            self._abort_if_unique_id_configured()
+            return self.async_create_entry(title="Benutzer", data=user_input)
+
+        return await self.async_step_user(user_input)
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry):
+        """Return the options flow."""
+        return OptionsFlowHandler(config_entry)
+
+
+class OptionsFlowHandler(config_entries.OptionsFlow):
+    """Handle OCPP options."""
+
+    def __init__(self, config_entry):
+        """Initialize options flow."""
+        self.config_entry = config_entry
+        self._user_id = None
+
+    async def async_step_init(self, user_input=None):
+        """Show the options menu."""
+        return self.async_show_menu(
+            step_id="init",
+            menu_options=["settings", "add_user", "edit_user", "toggle_user"],
+        )
+
+    async def async_step_settings(self, user_input=None):
+        """Configure OCPP user defaults."""
+        current_status = self.config_entry.options.get(
+            CONF_DEFAULT_AUTH_STATUS,
+            self.config_entry.data.get(
+                CONF_DEFAULT_AUTH_STATUS, AuthorizationStatus.accepted.value
+            ),
+        )
+
+        if user_input is not None:
+            return self.async_create_entry(
+                title="",
+                data={
+                    **self.config_entry.options,
+                    CONF_DEFAULT_AUTH_STATUS: user_input[CONF_DEFAULT_AUTH_STATUS],
+                },
+            )
+
+        return self.async_show_form(
+            step_id="settings",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_DEFAULT_AUTH_STATUS,
+                        default=current_status,
+                    ): vol.In(
+                        [
+                            AuthorizationStatus.accepted.value,
+                            AuthorizationStatus.blocked.value,
+                            AuthorizationStatus.invalid.value,
+                        ]
+                    )
+                }
+            ),
+        )
+
+    async def async_step_add_user(self, user_input=None):
+        """Add a managed OCPP user."""
+        errors = {}
+        if user_input is not None:
+            registry = await async_get_user_registry(self.hass)
+            id_tags = registry.parse_id_tags(user_input["id_tags"])
+            if not user_input["name"].strip() or not id_tags:
+                errors["base"] = "invalid_user"
+            elif registry.find_conflicting_id_tags(id_tags):
+                errors["base"] = "duplicate_id_tag"
+            else:
+                await registry.async_add_user(
+                    user_input["name"], id_tags, user_input["active"]
+                )
+                return self.async_create_entry(title="", data=self.config_entry.options)
+
+        return self.async_show_form(
+            step_id="add_user",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("name"): str,
+                    vol.Required("id_tags"): str,
+                    vol.Optional("active", default=True): bool,
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_edit_user(self, user_input=None):
+        """Select a managed OCPP user to edit."""
+        registry = await async_get_user_registry(self.hass)
+        users = registry.list_users()
+        if not users:
+            return self.async_abort(reason="no_users")
+
+        if user_input is not None:
+            self._user_id = user_input["user_id"]
+            return await self.async_step_edit_user_form()
+
+        return self.async_show_form(
+            step_id="edit_user",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("user_id"): vol.In(
+                        {user["user_id"]: user["name"] for user in users}
+                    )
+                }
+            ),
+        )
+
+    async def async_step_edit_user_form(self, user_input=None):
+        """Edit a managed OCPP user."""
+        registry = await async_get_user_registry(self.hass)
+        user = registry.get_user(self._user_id)
+        if user is None:
+            return self.async_abort(reason="user_not_found")
+
+        errors = {}
+        if user_input is not None:
+            id_tags = registry.parse_id_tags(user_input["id_tags"])
+            if not user_input["name"].strip() or not id_tags:
+                errors["base"] = "invalid_user"
+            elif registry.find_conflicting_id_tags(id_tags, self._user_id):
+                errors["base"] = "duplicate_id_tag"
+            else:
+                await registry.async_update_user(
+                    self._user_id,
+                    name=user_input["name"],
+                    id_tags=id_tags,
+                    active=user_input["active"],
+                )
+                return self.async_create_entry(title="", data=self.config_entry.options)
+
+        return self.async_show_form(
+            step_id="edit_user_form",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("name", default=user["name"]): str,
+                    vol.Required(
+                        "id_tags", default=", ".join(user.get("id_tags", []))
+                    ): str,
+                    vol.Optional("active", default=user.get("active", True)): bool,
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_toggle_user(self, user_input=None):
+        """Activate or deactivate a managed OCPP user."""
+        registry = await async_get_user_registry(self.hass)
+        users = registry.list_users()
+        if not users:
+            return self.async_abort(reason="no_users")
+
+        if user_input is not None:
+            user = registry.get_user(user_input["user_id"])
+            if user is None:
+                return self.async_abort(reason="user_not_found")
+            await registry.async_update_user(
+                user["user_id"], active=not user.get("active", True)
+            )
+            return self.async_create_entry(title="", data=self.config_entry.options)
+
+        return self.async_show_form(
+            step_id="toggle_user",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("user_id"): vol.In(
+                        {
+                            user["user_id"]: "{} ({})".format(
+                                user["name"],
+                                "active" if user.get("active", True) else "inactive",
+                            )
+                            for user in users
+                        }
+                    )
+                }
+            ),
         )

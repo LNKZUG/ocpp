@@ -10,7 +10,7 @@ from homeassistant.components.number import (
     NumberEntityDescription,
     RestoreNumber,
 )
-from homeassistant.const import UnitOfElectricCurrent
+from homeassistant.const import UnitOfElectricCurrent, UnitOfTime
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo
@@ -20,6 +20,7 @@ from .const import (
     CONF_CPID,
     CONF_MAX_CURRENT,
     DATA_UPDATED,
+    DEFAULT_AUTO_STOP_DELAY,
     DEFAULT_CPID,
     DEFAULT_MAX_CURRENT,
     DOMAIN,
@@ -36,6 +37,7 @@ class OcppNumberDescription(NumberEntityDescription):
 
 
 ELECTRIC_CURRENT_AMPERE = UnitOfElectricCurrent.AMPERE
+TIME_SECONDS = UnitOfTime.SECONDS
 
 NUMBERS: Final = [
     OcppNumberDescription(
@@ -47,6 +49,16 @@ NUMBERS: Final = [
         native_max_value=DEFAULT_MAX_CURRENT,
         native_step=1,
         native_unit_of_measurement=ELECTRIC_CURRENT_AMPERE,
+    ),
+    OcppNumberDescription(
+        key="auto_stop_delay",
+        name="Auto Stop Delay",
+        icon="mdi:timer-outline",
+        initial_value=DEFAULT_AUTO_STOP_DELAY,
+        native_min_value=0,
+        native_max_value=300,
+        native_step=1,
+        native_unit_of_measurement=TIME_SECONDS,
     ),
 ]
 
@@ -103,6 +115,10 @@ class OcppNumber(RestoreNumber, NumberEntity):
         await super().async_added_to_hass()
         if restored := await self.async_get_last_number_data():
             self._attr_native_value = restored.native_value
+        if self.entity_description.key == "auto_stop_delay":
+            self.central_system.set_auto_stop_delay(
+                self.cp_id, float(self._attr_native_value)
+            )
         async_dispatcher_connect(
             self._hass, DATA_UPDATED, self._schedule_immediate_update
         )
@@ -123,6 +139,11 @@ class OcppNumber(RestoreNumber, NumberEntity):
     async def async_set_native_value(self, value):
         """Set new value."""
         num_value = float(value)
+        if self.entity_description.key == "auto_stop_delay":
+            if self.central_system.set_auto_stop_delay(self.cp_id, num_value):
+                self._attr_native_value = num_value
+                self.async_write_ha_state()
+            return
         if self.central_system.get_available(
             self.cp_id
         ) and Profiles.SMART & self.central_system.get_supported_features(self.cp_id):

@@ -26,6 +26,8 @@ from .const import (
     DEFAULT_CLASS_UNITS_HA,
     DEFAULT_CPID,
     DOMAIN,
+    ENTRY_TYPE,
+    ENTRY_TYPE_USERS,
     ICON,
     Measurand,
     USER_SENSOR_IDS,
@@ -65,8 +67,23 @@ def metric_translation_key(metric: str) -> str:
     return slugify(metric.replace(".", "_")).replace("-", "_")
 
 
+def metric_display_name(metric: str) -> str:
+    """Return a readable fallback name for an OCPP metric."""
+    words = metric.replace(".", " ").replace("_", " ").split()
+    replacements = {
+        "id": "ID",
+        "rpm": "RPM",
+        "soc": "SoC",
+    }
+    return " ".join(replacements.get(word.lower(), word.title()) for word in words)
+
+
 async def async_setup_entry(hass, entry, async_add_devices):
     """Configure the sensor platform."""
+    if entry.data.get(ENTRY_TYPE) == ENTRY_TYPE_USERS:
+        await async_setup_user_sensors(hass, entry, async_add_devices)
+        return
+
     central_system = hass.data[DOMAIN][entry.entry_id]
     cp_id = entry.data.get(CONF_CPID, DEFAULT_CPID)
     entities = []
@@ -77,6 +94,7 @@ async def async_setup_entry(hass, entry, async_add_devices):
         SENSORS.append(
             OcppSensorDescription(
                 key=metric.lower(),
+                name=metric_display_name(metric),
                 metric=metric,
                 translation_key=metric_translation_key(metric),
             )
@@ -85,6 +103,7 @@ async def async_setup_entry(hass, entry, async_add_devices):
         SENSORS.append(
             OcppSensorDescription(
                 key=metric.lower(),
+                name=metric_display_name(metric),
                 metric=metric,
                 translation_key=metric_translation_key(metric),
                 entity_category=EntityCategory.DIAGNOSTIC,
@@ -103,10 +122,14 @@ async def async_setup_entry(hass, entry, async_add_devices):
 
     async_add_devices(entities, False)
 
+
+async def async_setup_user_sensors(hass, entry, async_add_devices):
+    """Set up global OCPP user sensors."""
     registry = await async_get_user_registry(hass)
     if not hass.data[DOMAIN].get(USER_SENSOR_SETUP_DONE):
         hass.data[DOMAIN][USER_SENSOR_SETUP_DONE] = True
         hass.data[DOMAIN][USER_SENSOR_IDS] = set()
+        async_add_devices([UserOverviewSensor(hass, registry)], False)
 
         @callback
         def add_missing_user_sensors():
@@ -349,6 +372,79 @@ class UserEnergySensor(SensorEntity):
             "id_tags": user.get("id_tags", []),
             "last_session_energy_kwh": user.get("last_session_energy_kwh"),
             "last_session_finished_at": user.get("last_session_finished_at"),
+        }
+
+    async def async_added_to_hass(self) -> None:
+        """Handle entity addition."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self._hass, DATA_USERS_UPDATED, self._schedule_immediate_update
+            )
+        )
+
+    @callback
+    def _schedule_immediate_update(self):
+        self.async_schedule_update_ha_state(True)
+
+
+class UserOverviewSensor(SensorEntity):
+    """Overview of all managed OCPP users."""
+
+    _attr_has_entity_name = False
+    _attr_icon = "mdi:account-group"
+    _attr_name = "OCPP Benutzer"
+    _attr_unique_id = f"{DOMAIN}_users_overview"
+
+    def __init__(self, hass: HomeAssistant, registry):
+        """Initialize the user overview sensor."""
+        self._hass = hass
+        self.registry = registry
+
+    @property
+    def native_value(self):
+        """Return number of managed users."""
+        return len(self.registry.list_users())
+
+    @property
+    def device_info(self):
+        """Return device info for the user overview."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, "users")},
+            name="OCPP Benutzer",
+            model="OCPP User Registry",
+        )
+
+    @property
+    def extra_state_attributes(self):
+        """Return all managed users as a compact overview."""
+        users = []
+        active_users = 0
+        inactive_users = 0
+        for user in self.registry.list_users():
+            active = user.get("active", True)
+            if active:
+                active_users += 1
+            else:
+                inactive_users += 1
+            users.append(
+                {
+                    "name": user["name"],
+                    "user_id": user["user_id"],
+                    "status": "Accepted" if active else "Blocked",
+                    "active": active,
+                    "id_tags": user.get("id_tags", []),
+                    "energy_kwh": user.get("energy_kwh", 0.0),
+                    "last_session_energy_kwh": user.get("last_session_energy_kwh"),
+                    "last_session_finished_at": user.get(
+                        "last_session_finished_at"
+                    ),
+                }
+            )
+        return {
+            "active_users": active_users,
+            "inactive_users": inactive_users,
+            "users": users,
         }
 
     async def async_added_to_hass(self) -> None:

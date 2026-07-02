@@ -1,6 +1,8 @@
 """Implement a test by a simulating a chargepoint."""
 import asyncio
+from collections import defaultdict
 from datetime import datetime, timezone  # timedelta,
+from types import SimpleNamespace
 
 from homeassistant.components.button import DOMAIN as BUTTON_DOMAIN
 from homeassistant.components.button.const import SERVICE_PRESS
@@ -16,9 +18,16 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 import websockets
 
 from custom_components.ocpp import async_setup_entry, async_unload_entry
+from custom_components.ocpp.api import ChargePoint as OcppChargePoint, Metric
 from custom_components.ocpp.button import BUTTONS
 from custom_components.ocpp.const import DOMAIN as OCPP_DOMAIN
-from custom_components.ocpp.enums import ConfigurationKey, HAChargerServices as csvcs
+from custom_components.ocpp.enums import (
+    ConfigurationKey,
+    HAChargerDetails as cdet,
+    HAChargerStatuses as cstat,
+    HAChargerServices as csvcs,
+    Profiles as prof,
+)
 from custom_components.ocpp.number import NUMBERS
 from custom_components.ocpp.switch import SWITCHES
 from ocpp.routing import on
@@ -40,9 +49,69 @@ from ocpp.v16.enums import (
     ResetStatus,
     TriggerMessageStatus,
     UnlockStatus,
+    Measurand,
 )
 
 from .const import MOCK_CONFIG_DATA, MOCK_CONFIG_DATA_2
+
+
+async def test_supported_features_timeout_defaults_to_core():
+    """Test chargers that do not answer SupportedFeatureProfiles."""
+
+    async def call_timeout(req):
+        raise asyncio.TimeoutError
+
+    charge_point = object.__new__(OcppChargePoint)
+    charge_point.id = "test_cpid"
+    charge_point.central = SimpleNamespace(config={})
+    charge_point._attr_supported_features = prof.NONE
+    charge_point._metrics = defaultdict(lambda: Metric(None, None))
+    charge_point.call = call_timeout
+
+    await charge_point.get_supported_features()
+
+    assert charge_point._attr_supported_features == prof.CORE
+    assert charge_point._metrics[cdet.features.value].value == prof.CORE
+
+
+async def test_evse_suspended_auto_stop_sends_remote_stop():
+    """Test persistent SuspendedEVSE schedules a remote transaction stop."""
+
+    stopped = False
+    triggered = False
+
+    async def stop_transaction():
+        nonlocal stopped
+        stopped = True
+        return True
+
+    async def trigger_status_notification():
+        nonlocal triggered
+        triggered = True
+        return True
+
+    charge_point = object.__new__(OcppChargePoint)
+    charge_point.id = "test_cpid"
+    charge_point.hass = SimpleNamespace(async_create_task=asyncio.create_task)
+    charge_point._metrics = defaultdict(lambda: Metric(None, None))
+    charge_point._metrics[cstat.status_connector.value].value = (
+        ChargePointStatus.suspended_evse.value
+    )
+    charge_point._metrics[Measurand.power_active_import.value].value = 0
+    charge_point._metrics[Measurand.current_import.value].value = 0
+    charge_point.active_transaction_id = 123
+    charge_point.auto_stop_on_evse_suspended = True
+    charge_point.auto_stop_delay = 0
+    charge_point._auto_stop_task = None
+    charge_point.stop_transaction = stop_transaction
+    charge_point.trigger_status_notification = trigger_status_notification
+
+    charge_point._schedule_auto_stop_on_evse_suspended("test")
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+
+    assert stopped is True
+    assert triggered is True
 
 
 @pytest.mark.timeout(90)  # Set timeout for this test

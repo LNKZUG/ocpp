@@ -52,6 +52,8 @@ from ocpp.v16.enums import (
 from .const import (
     CONF_AUTH_LIST,
     CONF_AUTH_STATUS,
+    CONF_AUTO_STOP_DELAY,
+    CONF_AUTO_STOP_ON_EVSE_SUSPENDED,
     CONF_CPID,
     CONF_CSID,
     CONF_DEFAULT_AUTH_STATUS,
@@ -74,6 +76,8 @@ from .const import (
     CONFIG,
     DEFAULT_CPID,
     DEFAULT_CSID,
+    DEFAULT_AUTO_STOP_DELAY,
+    DEFAULT_AUTO_STOP_ON_EVSE_SUSPENDED,
     DEFAULT_ENERGY_UNIT,
     DEFAULT_FORCE_SMART_CHARGING,
     DEFAULT_HOST,
@@ -294,6 +298,32 @@ class CentralSystem:
             return self.charge_points[cp_id].supported_features
         return 0
 
+    def get_auto_stop_on_evse_suspended(self, cp_id: str):
+        """Return whether EVSE suspend should automatically stop the transaction."""
+        if cp_id in self.charge_points:
+            return self.charge_points[cp_id].auto_stop_on_evse_suspended
+        return DEFAULT_AUTO_STOP_ON_EVSE_SUSPENDED
+
+    def set_auto_stop_on_evse_suspended(self, cp_id: str, value: bool):
+        """Set whether EVSE suspend should automatically stop the transaction."""
+        if cp_id in self.charge_points:
+            self.charge_points[cp_id].auto_stop_on_evse_suspended = value
+            return True
+        return False
+
+    def get_auto_stop_delay(self, cp_id: str):
+        """Return EVSE suspend auto-stop delay in seconds."""
+        if cp_id in self.charge_points:
+            return self.charge_points[cp_id].auto_stop_delay
+        return DEFAULT_AUTO_STOP_DELAY
+
+    def set_auto_stop_delay(self, cp_id: str, value: float):
+        """Set EVSE suspend auto-stop delay in seconds."""
+        if cp_id in self.charge_points:
+            self.charge_points[cp_id].auto_stop_delay = value
+            return True
+        return False
+
     async def set_max_charge_rate_amps(self, cp_id: str, value: float):
         """Set the maximum charge rate in amps."""
         if cp_id in self.charge_points:
@@ -372,6 +402,15 @@ class ChargePoint(cp):
         self.received_boot_notification = False
         self.post_connect_success = False
         self.tasks = None
+        self._auto_stop_task = None
+        self.auto_stop_on_evse_suspended = entry.data.get(
+            CONF_AUTO_STOP_ON_EVSE_SUSPENDED,
+            DEFAULT_AUTO_STOP_ON_EVSE_SUSPENDED,
+        )
+        self.auto_stop_delay = entry.data.get(
+            CONF_AUTO_STOP_DELAY,
+            DEFAULT_AUTO_STOP_DELAY,
+        )
         self._charger_reports_session_energy = False
         self._metrics = defaultdict(lambda: Metric(None, None))
         self._metrics[cdet.identifier.value].value = id
@@ -570,8 +609,15 @@ class ChargePoint(cp):
     async def get_supported_features(self):
         """Get supported features."""
         req = call.GetConfiguration(key=[ckey.supported_feature_profiles.value])
-        resp = await self.call(req)
-        feature_list = (resp.configuration_key[0][om.value.value]).split(",")
+        try:
+            resp = await self.call(req)
+            feature_list = (resp.configuration_key[0][om.value.value]).split(",")
+        except asyncio.TimeoutError:
+            _LOGGER.warning(
+                "%s did not respond to SupportedFeatureProfiles, defaulting to Core",
+                self.id,
+            )
+            feature_list = [om.feature_profile_core.value]
         if feature_list[0] == "":
             _LOGGER.warning("No feature profiles detected, defaulting to Core")
             await self.notify_ha("No feature profiles detected, defaulting to Core")
@@ -618,7 +664,7 @@ class ChargePoint(cp):
     async def trigger_status_notification(self):
         """Trigger status notifications for all connectors."""
         return_value = True
-        nof_connectors = int(self._metrics[cdet.connectors.value].value)
+        nof_connectors = int(self._metrics[cdet.connectors.value].value or 1)
         for id in range(0, nof_connectors + 1):
             _LOGGER.debug(f"trigger status notification for connector={id}")
             req = call.TriggerMessage(
@@ -796,6 +842,84 @@ class ChargePoint(cp):
                 f"Warning: Stop transaction failed with response {resp.status}"
             )
             return False
+
+    def _cancel_auto_stop(self):
+        """Cancel a pending EVSE-suspend auto-stop task."""
+        if self._auto_stop_task is not None and not self._auto_stop_task.done():
+            self._auto_stop_task.cancel()
+        self._auto_stop_task = None
+
+    def _has_active_import(self):
+        """Return whether the charger currently reports meaningful import."""
+        for metric in (
+            Measurand.power_active_import.value,
+            Measurand.current_import.value,
+        ):
+            value = self._metrics[metric].value
+            if value is not None and float(value) > 0.05:
+                return True
+        return False
+
+    def _schedule_auto_stop_on_evse_suspended(self, reason: str):
+        """Schedule remote stop after EVSE-side suspension if still idle."""
+        if not self.auto_stop_on_evse_suspended:
+            return
+        if self.active_transaction_id == 0:
+            return
+        if self._auto_stop_task is not None and not self._auto_stop_task.done():
+            return
+
+        transaction_id = self.active_transaction_id
+        delay = max(0, float(self.auto_stop_delay or 0))
+        _LOGGER.info(
+            "%s schedules RemoteStopTransaction for transaction %s in %.1f seconds: %s",
+            self.id,
+            transaction_id,
+            delay,
+            reason,
+        )
+        self._auto_stop_task = self.hass.async_create_task(
+            self._auto_stop_after_evse_suspended(delay, transaction_id, reason)
+        )
+
+    async def _auto_stop_after_evse_suspended(
+        self, delay: float, transaction_id: int, reason: str
+    ):
+        """Remote stop a transaction if EVSE-side suspension persists."""
+        try:
+            await asyncio.sleep(delay)
+            if not self.auto_stop_on_evse_suspended:
+                return
+            if self.active_transaction_id != transaction_id:
+                return
+            if self._has_active_import():
+                return
+            status = self._metrics[cstat.status_connector.value].value
+            if status not in (
+                ChargePointStatus.suspended_evse.value,
+                ChargePointStatus.suspended_ev.value,
+            ):
+                return
+
+            _LOGGER.info(
+                "%s sends RemoteStopTransaction for transaction %s after %s",
+                self.id,
+                transaction_id,
+                reason,
+            )
+            if await self.stop_transaction():
+                await self.trigger_status_notification()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            _LOGGER.exception(
+                "%s failed to auto-stop transaction %s after EVSE suspension",
+                self.id,
+                transaction_id,
+            )
+        finally:
+            if self._auto_stop_task is asyncio.current_task():
+                self._auto_stop_task = None
 
     async def reset(self, typ: str = ResetType.hard):
         """Hard reset charger unless soft reset requested."""
@@ -1036,11 +1160,13 @@ class ChargePoint(cp):
     async def stop(self):
         """Close connection and cancel ongoing tasks."""
         self.status = STATE_UNAVAILABLE
+        self._cancel_auto_stop()
         if self._connection.open:
             _LOGGER.debug(f"Closing websocket to '{self.id}'")
             await self._connection.close()
-        for task in self.tasks:
-            task.cancel()
+        if self.tasks is not None:
+            for task in self.tasks:
+                task.cancel()
 
     async def reconnect(self, connection: websockets.server.WebSocketServerProtocol):
         """Reconnect charge point."""
@@ -1165,6 +1291,7 @@ class ChargePoint(cp):
         """Request handler for MeterValues Calls."""
 
         transaction_id: int = kwargs.get(om.transaction_id.name, 0)
+        contexts = set()
 
         # If missing meter_start or active_transaction_id try to restore from HA states. If HA
         # does not have values either, generate new ones.
@@ -1207,6 +1334,8 @@ class ChargePoint(cp):
                 phase = sampled_value.get(om.phase.value, None)
                 location = sampled_value.get(om.location.value, None)
                 context = sampled_value.get(om.context.value, None)
+                if context is not None:
+                    contexts.add(context)
 
                 if len(sampled_value.keys()) == 1:  # Backwards compatibility
                     measurand = DEFAULT_MEASURAND
@@ -1264,6 +1393,20 @@ class ChargePoint(cp):
             if unprocessed is not None:
                 self.process_phases(unprocessed)
         if transaction_matches:
+            if "Interruption.Begin" in contexts:
+                self._schedule_auto_stop_on_evse_suspended(
+                    "MeterValues context=Interruption.Begin"
+                )
+            elif (
+                self._metrics[cstat.status_connector.value].value
+                == ChargePointStatus.suspended_evse.value
+                and not self._has_active_import()
+            ):
+                self._schedule_auto_stop_on_evse_suspended(
+                    "MeterValues while SuspendedEVSE"
+                )
+            elif self._has_active_import():
+                self._cancel_auto_stop()
             self._metrics[csess.session_time.value].value = round(
                 (
                     int(time.time())
@@ -1349,6 +1492,18 @@ class ChargePoint(cp):
                 self._metrics[Measurand.power_active_export.value].value = 0
             if Measurand.power_reactive_export.value in self._metrics:
                 self._metrics[Measurand.power_reactive_export.value].value = 0
+        if status == ChargePointStatus.suspended_evse.value:
+            self._schedule_auto_stop_on_evse_suspended(
+                "StatusNotification SuspendedEVSE"
+            )
+        elif status in (
+            ChargePointStatus.available.value,
+            ChargePointStatus.charging.value,
+            ChargePointStatus.finishing.value,
+            ChargePointStatus.faulted.value,
+            ChargePointStatus.unavailable.value,
+        ):
+            self._cancel_auto_stop()
         self.hass.async_create_task(self.central.update(self.central.cpid))
         return call_result.StatusNotification()
 
@@ -1398,9 +1553,15 @@ class ChargePoint(cp):
         # get the domain wide configuration
         config = self.hass.data[DOMAIN].get(CONFIG, {})
         # get the default authorization status. Use accept if not configured
-        default_auth_status = config.get(
-            CONF_DEFAULT_AUTH_STATUS, AuthorizationStatus.accepted.value
-        )
+        default_auth_status = AuthorizationStatus.accepted.value
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            if CONF_DEFAULT_AUTH_STATUS in entry.options:
+                default_auth_status = entry.options[CONF_DEFAULT_AUTH_STATUS]
+                break
+        else:
+            default_auth_status = config.get(
+                CONF_DEFAULT_AUTH_STATUS, AuthorizationStatus.accepted.value
+            )
         # get the authorization list
         auth_list = config.get(CONF_AUTH_LIST, {})
         # search for the entry, based on the id_tag
@@ -1435,6 +1596,7 @@ class ChargePoint(cp):
 
         auth_status = self.get_authorization_status(id_tag)
         if auth_status == AuthorizationStatus.accepted.value:
+            self._cancel_auto_stop()
             self.active_transaction_id = int(time.time())
             self._charger_reports_session_energy = False
             self._metrics[cstat.id_tag.value].value = id_tag
@@ -1471,6 +1633,7 @@ class ChargePoint(cp):
                 transaction_id,
             )
         self.active_transaction_id = 0
+        self._cancel_auto_stop()
         self._metrics[cstat.stop_reason.value].value = kwargs.get(om.reason.name, None)
         if (
             self._metrics[csess.meter_start.value].value is not None

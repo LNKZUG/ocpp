@@ -139,9 +139,16 @@
             "init": {
                 "title": "OCPP Nutzerverwaltung",
                 "menu_options": {
+                    "settings": "Einstellungen",
                     "add_user": "Nutzer anlegen",
                     "edit_user": "Nutzer bearbeiten",
                     "toggle_user": "Nutzer aktivieren/deaktivieren"
+                }
+            },
+            "settings": {
+                "title": "OCPP Nutzer-Einstellungen",
+                "data": {
+                    "default_authorization_status": "Standardstatus fuer unbekannte idTags"
                 }
             },
             "add_user": {

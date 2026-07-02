@@ -9,6 +9,8 @@ from ocpp.v16.enums import Measurand, UnitOfMeasure
 
 CONF_AUTH_LIST = "authorization_list"
 CONF_AUTH_STATUS = "authorization_status"
+CONF_AUTO_STOP_ON_EVSE_SUSPENDED = "auto_stop_on_evse_suspended"
+CONF_AUTO_STOP_DELAY = "auto_stop_delay"
 CONF_CPI = "charge_point_identity"
 CONF_CPID = "cpid"
 CONF_CSID = "csid"
@@ -41,6 +43,8 @@ DATA_UPDATED = "ocpp_data_updated"
 DATA_USERS_UPDATED = "ocpp_users_updated"
 DEFAULT_CSID = "central"
 DEFAULT_CPID = "charger"
+DEFAULT_AUTO_STOP_ON_EVSE_SUSPENDED = True
+DEFAULT_AUTO_STOP_DELAY = 10
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_MAX_CURRENT = 32
 DEFAULT_PORT = 9000
@@ -58,6 +62,9 @@ DEFAULT_WEBSOCKET_PING_INTERVAL = 20
 DEFAULT_WEBSOCKET_PING_TIMEOUT = 20
 DOMAIN = "ocpp"
 CONFIG = "config"
+ENTRY_TYPE = "entry_type"
+ENTRY_TYPE_CENTRAL = "central"
+ENTRY_TYPE_USERS = "users"
 USER_REGISTRY = "user_registry"
 USER_SENSOR_SETUP_DONE = "user_sensor_setup_done"
 USER_SENSOR_IDS = "user_sensor_ids"

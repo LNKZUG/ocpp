@@ -15,7 +15,13 @@ from homeassistant.helpers.entity import DeviceInfo
 from ocpp.v16.enums import ChargePointStatus
 
 from .api import CentralSystem
-from .const import CONF_CPID, DEFAULT_CPID, DOMAIN, ICON
+from .const import (
+    CONF_CPID,
+    DEFAULT_AUTO_STOP_ON_EVSE_SUSPENDED,
+    DEFAULT_CPID,
+    DOMAIN,
+    ICON,
+)
 from .enums import HAChargerServices, HAChargerStatuses
 
 
@@ -58,6 +64,12 @@ SWITCHES: Final = [
         metric_state=HAChargerStatuses.status_connector.value,
         metric_condition=[ChargePointStatus.available.value],
         default_state=True,
+    ),
+    OcppSwitchDescription(
+        key="auto_stop_on_evse_suspended",
+        name="Auto Stop On EVSE Suspended",
+        icon="mdi:timer-stop-outline",
+        default_state=DEFAULT_AUTO_STOP_ON_EVSE_SUSPENDED,
     ),
 ]
 
@@ -118,10 +130,20 @@ class ChargePointSwitch(SwitchEntity):
                 self._state = True
             else:
                 self._state = False
+        elif self.entity_description.key == "auto_stop_on_evse_suspended":
+            self._state = self.central_system.get_auto_stop_on_evse_suspended(
+                self.cp_id
+            )
         return self._state  # type: ignore [no-any-return]
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
+        if self.entity_description.key == "auto_stop_on_evse_suspended":
+            self._state = self.central_system.set_auto_stop_on_evse_suspended(
+                self.cp_id, True
+            )
+            self.async_write_ha_state()
+            return
         self._state = await self.central_system.set_charger_state(
             self.cp_id, self.entity_description.on_action
         )
@@ -129,6 +151,11 @@ class ChargePointSwitch(SwitchEntity):
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the switch off."""
         """Response is True if successful but State is False"""
+        if self.entity_description.key == "auto_stop_on_evse_suspended":
+            if self.central_system.set_auto_stop_on_evse_suspended(self.cp_id, False):
+                self._state = False
+            self.async_write_ha_state()
+            return
         if self.entity_description.off_action is None:
             resp = True
         elif self.entity_description.off_action == self.entity_description.on_action:

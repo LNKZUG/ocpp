@@ -2,6 +2,7 @@
 
 import logging
 
+from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
@@ -25,7 +26,11 @@ from .const import (
     DEFAULT_CPID,
     DEFAULT_CSID,
     DOMAIN,
+    ENTRY_TYPE,
+    ENTRY_TYPE_CENTRAL,
+    ENTRY_TYPE_USERS,
     PLATFORMS,
+    SENSOR,
 )
 from .user_registry import async_get_user_registry
 
@@ -165,6 +170,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     await async_get_user_registry(hass)
     await async_setup_user_services(hass)
+
+    entry_type = entry.data.get(ENTRY_TYPE, ENTRY_TYPE_CENTRAL)
+    if entry_type == ENTRY_TYPE_USERS:
+        await hass.config_entries.async_forward_entry_setups(entry, [SENSOR])
+        return True
+
+    if not any(
+        existing_entry.data.get(ENTRY_TYPE) == ENTRY_TYPE_USERS
+        for existing_entry in hass.config_entries.async_entries(DOMAIN)
+    ):
+        await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": config_entries.SOURCE_IMPORT},
+            data={ENTRY_TYPE: ENTRY_TYPE_USERS},
+        )
+
     central_sys = await CentralSystem.create(hass, entry)
 
     dr = device_registry.async_get(hass)
@@ -196,6 +217,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Handle removal of an entry."""
+    if entry.data.get(ENTRY_TYPE) == ENTRY_TYPE_USERS:
+        return await hass.config_entries.async_unload_platforms(entry, [SENSOR])
+
     central_sys = hass.data[DOMAIN][entry.entry_id]
 
     central_sys._server.close()
