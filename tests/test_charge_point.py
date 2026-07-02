@@ -54,6 +54,7 @@ from ocpp.v16.enums import (
     RegistrationStatus,
     RemoteStartStopStatus,
     ResetStatus,
+    ResetType,
     TriggerMessageStatus,
     UnlockStatus,
     Measurand,
@@ -137,6 +138,7 @@ async def test_pending_remote_start_cleanup_unlocks_and_refreshes(monkeypatch):
 
     unlocked = False
     triggered = False
+    reset_type = None
 
     async def unlock():
         nonlocal unlocked
@@ -148,7 +150,13 @@ async def test_pending_remote_start_cleanup_unlocks_and_refreshes(monkeypatch):
         triggered = True
         return True
 
+    async def reset(typ):
+        nonlocal reset_type
+        reset_type = typ
+        return True
+
     monkeypatch.setattr(ocpp_api, "REMOTE_START_CLEANUP_DELAY", 0)
+    monkeypatch.setattr(ocpp_api, "STALE_CONNECTOR_RESET_DELAY", 0)
 
     charge_point = object.__new__(OcppChargePoint)
     charge_point.id = "test_cpid"
@@ -161,13 +169,79 @@ async def test_pending_remote_start_cleanup_unlocks_and_refreshes(monkeypatch):
     charge_point._remote_start_cleanup_task = None
     charge_point.unlock = unlock
     charge_point.trigger_status_notification = trigger_status_notification
+    charge_point.reset = reset
 
     charge_point._schedule_remote_start_cleanup("ABC")
+    await asyncio.sleep(0)
     await asyncio.sleep(0)
     await asyncio.sleep(0)
 
     assert unlocked is True
     assert triggered is True
+    assert reset_type == ResetType.soft
+
+
+async def test_stale_preparing_without_transaction_schedules_cleanup(monkeypatch):
+    """Test Preparing without a transaction is recovered even without a start task."""
+
+    unlocked = False
+    triggered = False
+    reset_type = None
+
+    async def unlock():
+        nonlocal unlocked
+        unlocked = True
+        return True
+
+    async def trigger_status_notification():
+        nonlocal triggered
+        triggered = True
+        return True
+
+    async def reset(typ):
+        nonlocal reset_type
+        reset_type = typ
+        return True
+
+    monkeypatch.setattr(ocpp_api, "REMOTE_START_CLEANUP_DELAY", 0)
+    monkeypatch.setattr(ocpp_api, "STALE_CONNECTOR_RESET_DELAY", 0)
+
+    async def update(cp_id):
+        return None
+
+    charge_point = object.__new__(OcppChargePoint)
+    charge_point.id = "test_cpid"
+    charge_point.hass = SimpleNamespace(async_create_task=asyncio.create_task)
+    charge_point.central = SimpleNamespace(
+        cpid="test_cpid",
+        update=update,
+    )
+    charge_point._metrics = defaultdict(lambda: Metric(None, None))
+    charge_point._metrics[cstat.id_tag.value].value = "ABC"
+    charge_point._metrics[csess.current_user.value].value = "Lukas"
+    charge_point._metrics[csess.current_user.value].extra_attr = {"id_tag": "ABC"}
+    charge_point.active_transaction_id = 0
+    charge_point._auto_stop_task = None
+    charge_point._remote_start_cleanup_task = None
+    charge_point.unlock = unlock
+    charge_point.trigger_status_notification = trigger_status_notification
+    charge_point.reset = reset
+
+    charge_point.on_status_notification(
+        connector_id=1,
+        error_code=ChargePointErrorCode.no_error.value,
+        status=ChargePointStatus.preparing.value,
+    )
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+
+    assert unlocked is True
+    assert triggered is True
+    assert reset_type == ResetType.soft
+    assert charge_point._metrics[cstat.id_tag.value].value is None
+    assert charge_point._metrics[csess.current_user.value].value is None
+    assert charge_point._metrics[csess.current_user.value].extra_attr == {}
 
 
 def test_current_user_metric_maps_id_tag_to_managed_user():

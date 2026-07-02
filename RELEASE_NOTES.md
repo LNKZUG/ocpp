@@ -1,5 +1,15 @@
 # Release Notes
 
+## v0.5.18 - Stale preparing recovery
+
+Recovers wallboxes that get stuck in `Preparing` or `SuspendedEV` without ever starting a transaction.
+
+### Fixed
+
+* Starts the pending-start cleanup directly from stale connector status notifications, so recovery still runs after Home Assistant restarts or repeated `Preparing` updates.
+* Clears pending `Id Tag` and `Current User` attribution when a stale start is cleaned up.
+* Requests connector unlock and a fresh status notification, then sends a soft reset if the wallbox still reports `Preparing` or `SuspendedEV` without an active transaction.
+
 ## v0.5.17 - Persistent current user restore
 
 Keeps managed-user attribution visible after Home Assistant restarts while a charging transaction is still active.

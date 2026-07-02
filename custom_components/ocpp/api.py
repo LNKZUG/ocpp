@@ -119,6 +119,7 @@ logging.getLogger(DOMAIN).setLevel(logging.INFO)
 # logging.getLogger("websockets").setLevel(logging.DEBUG)
 
 REMOTE_START_CLEANUP_DELAY = 180
+STALE_CONNECTOR_RESET_DELAY = 5
 
 TIME_MINUTES = UnitOfTime.MINUTES
 
@@ -483,6 +484,7 @@ class ChargePoint(cp):
         self.tasks = None
         self._auto_stop_task = None
         self._remote_start_cleanup_task = None
+        self._remote_start_cleanup_id_tag = None
         self.auto_stop_on_evse_suspended = entry.data.get(
             CONF_AUTO_STOP_ON_EVSE_SUSPENDED,
             DEFAULT_AUTO_STOP_ON_EVSE_SUSPENDED,
@@ -940,6 +942,7 @@ class ChargePoint(cp):
         ):
             task.cancel()
         self._remote_start_cleanup_task = None
+        self._remote_start_cleanup_id_tag = None
 
     def _has_active_import(self):
         """Return whether the charger currently reports meaningful import."""
@@ -1013,14 +1016,27 @@ class ChargePoint(cp):
             if self._auto_stop_task is asyncio.current_task():
                 self._auto_stop_task = None
 
-    def _schedule_remote_start_cleanup(self, id_tag: str):
+    def _schedule_remote_start_cleanup(
+        self, id_tag: str | None, reset_existing: bool = True
+    ):
         """Schedule cleanup when a remote start never becomes a transaction."""
+        task = getattr(self, "_remote_start_cleanup_task", None)
+        if task is not None and not task.done() and not reset_existing:
+            return
+
         self._cancel_remote_start_cleanup()
+        self._remote_start_cleanup_id_tag = id_tag
         self._remote_start_cleanup_task = self.hass.async_create_task(
             self._cleanup_pending_remote_start(id_tag)
         )
 
-    async def _cleanup_pending_remote_start(self, id_tag: str):
+    def _clear_pending_session_metrics(self):
+        """Clear local session attribution for a pending start without transaction."""
+        self._metrics[cstat.id_tag.value].value = None
+        self._metrics[csess.current_user.value].value = None
+        self._metrics[csess.current_user.value].extra_attr = {}
+
+    async def _cleanup_pending_remote_start(self, id_tag: str | None):
         """Recover from a remote start that stayed pending without a transaction."""
         try:
             await asyncio.sleep(REMOTE_START_CLEANUP_DELAY)
@@ -1037,12 +1053,30 @@ class ChargePoint(cp):
             _LOGGER.info(
                 "%s cleans up pending RemoteStartTransaction for idTag %s after %.1f seconds in %s",
                 self.id,
-                id_tag,
+                id_tag or "unknown",
                 REMOTE_START_CLEANUP_DELAY,
                 status,
             )
+            self._clear_pending_session_metrics()
             await self.unlock()
             await self.trigger_status_notification()
+            await asyncio.sleep(STALE_CONNECTOR_RESET_DELAY)
+            if self.active_transaction_id != 0:
+                return
+            status = self._metrics[cstat.status_connector.value].value
+            if status not in (
+                ChargePointStatus.preparing.value,
+                ChargePointStatus.suspended_ev.value,
+                ChargePointStatus.suspended_evse.value,
+            ):
+                return
+
+            _LOGGER.warning(
+                "%s is still stuck in %s without a transaction after pending-start cleanup; sending soft reset",
+                self.id,
+                status,
+            )
+            await self.reset(ResetType.soft)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -1050,6 +1084,7 @@ class ChargePoint(cp):
         finally:
             if self._remote_start_cleanup_task is asyncio.current_task():
                 self._remote_start_cleanup_task = None
+                self._remote_start_cleanup_id_tag = None
 
     async def reset(self, typ: str = ResetType.hard):
         """Hard reset charger unless soft reset requested."""
@@ -1616,7 +1651,20 @@ class ChargePoint(cp):
                 and self.active_transaction_id == 0
             ):
                 self._cancel_remote_start_cleanup()
-                self._metrics[cstat.id_tag.value].value = None
+                self._clear_pending_session_metrics()
+            elif (
+                status
+                in (
+                    ChargePointStatus.preparing.value,
+                    ChargePointStatus.suspended_ev.value,
+                    ChargePointStatus.suspended_evse.value,
+                )
+                and self.active_transaction_id == 0
+            ):
+                self._schedule_remote_start_cleanup(
+                    self._metrics[cstat.id_tag.value].value,
+                    reset_existing=False,
+                )
         if connector_id >= 1:
             self._metrics[cstat.status_connector.value].extra_attr[
                 connector_id
@@ -1652,6 +1700,7 @@ class ChargePoint(cp):
             ChargePointStatus.unavailable.value,
         ):
             self._cancel_auto_stop()
+            self._cancel_remote_start_cleanup()
         self.hass.async_create_task(self.central.update(self.central.cpid))
         return call_result.StatusNotification()
 
