@@ -77,8 +77,9 @@ NUMBER = "number"
 SENSOR = "sensor"
 SWITCH = "switch"
 BUTTON = "button"
+SELECT = "select"
 
-PLATFORMS = [SENSOR, SWITCH, NUMBER, BUTTON]
+PLATFORMS = [SENSOR, SWITCH, NUMBER, BUTTON, SELECT]
 
 # Ocpp supported measurands
 MEASURANDS = [

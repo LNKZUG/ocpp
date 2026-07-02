@@ -1,5 +1,20 @@
 # Release Notes
 
+## v0.5.16 - User remote-start controls and idTag cleanup
+
+Adds managed-user remote-start controls for Home Assistant and clears stale idTag state after ended or abandoned charging attempts.
+
+### Added
+
+* Adds per-user remote-start buttons for active managed OCPP users with idTags.
+* Adds a managed-user select entity plus a separate start button that only starts charging after a user is selected.
+* Sends the selected user's idTag with `RemoteStartTransaction` while keeping the existing charge-control switch behavior unchanged.
+
+### Fixed
+
+* Clears the wallbox `Id Tag` entity when a transaction stops.
+* Clears the wallbox `Id Tag` entity when a tag was authorized but no transaction started and the connector returns to `Available`.
+
 ## v0.5.15 - HACS sortable counter release
 
 Republishes the user and wallbox counter release with a three-part version number so HACS sorts it above `v0.5.6.9`.

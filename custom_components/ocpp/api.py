@@ -199,6 +199,7 @@ class CentralSystem:
         self.config = entry.data
         self.id = entry.entry_id
         self.user_registry = hass.data[DOMAIN].get(USER_REGISTRY)
+        self.selected_user_ids = {}
         self.charge_points = {}
         if entry.data.get(CONF_SSL, DEFAULT_SSL):
             self.ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -335,6 +336,64 @@ class CentralSystem:
             self.charge_points[cp_id].auto_stop_delay = value
             return True
         return False
+
+    def set_selected_user(self, cp_id: str, user_id: str | None) -> bool:
+        """Store the selected OCPP user for a charge point."""
+        if user_id is None:
+            self.selected_user_ids.pop(cp_id, None)
+            return True
+        if self.user_registry is None:
+            return False
+        user = self.user_registry.get_user(user_id)
+        if (
+            user is None
+            or not user.get("active", True)
+            or not user.get("id_tags", [])
+        ):
+            return False
+        self.selected_user_ids[cp_id] = user_id
+        return True
+
+    def get_selected_user(self, cp_id: str):
+        """Return the selected OCPP user for a charge point."""
+        if self.user_registry is None:
+            return None
+        user_id = self.selected_user_ids.get(cp_id)
+        if user_id is None:
+            return None
+        user = self.user_registry.get_user(user_id)
+        if (
+            user is None
+            or not user.get("active", True)
+            or not user.get("id_tags", [])
+        ):
+            self.selected_user_ids.pop(cp_id, None)
+            return None
+        return user
+
+    async def start_transaction_for_user(self, cp_id: str, user_id: str):
+        """Remote start a transaction for a managed OCPP user."""
+        if self.user_registry is None:
+            return False
+        user = self.user_registry.get_user(user_id)
+        if (
+            user is None
+            or not user.get("active", True)
+            or not user.get("id_tags", [])
+        ):
+            return False
+        if cp_id in self.charge_points:
+            return await self.charge_points[cp_id].start_transaction(
+                user["id_tags"][0]
+            )
+        return False
+
+    async def start_transaction_for_selected_user(self, cp_id: str):
+        """Remote start a transaction for the selected managed OCPP user."""
+        user = self.get_selected_user(cp_id)
+        if user is None:
+            return False
+        return await self.start_transaction_for_user(cp_id, user["user_id"])
 
     async def set_max_charge_rate_amps(self, cp_id: str, value: float):
         """Set the maximum charge rate in amps."""
@@ -814,7 +873,7 @@ class ChargePoint(cp):
             )
             return False
 
-    async def start_transaction(self):
+    async def start_transaction(self, id_tag: str | None = None):
         """
         Remote start a transaction.
 
@@ -823,9 +882,9 @@ class ChargePoint(cp):
         resp = await self.get_configuration(ckey.authorize_remote_tx_requests.value)
         if resp is True:
             await self.configure(ckey.authorize_remote_tx_requests.value, "false")
-        req = call.RemoteStartTransaction(
-            connector_id=1, id_tag=self._metrics[cdet.identifier.value].value[:20]
-        )
+        if id_tag is None:
+            id_tag = self._metrics[cdet.identifier.value].value[:20]
+        req = call.RemoteStartTransaction(connector_id=1, id_tag=str(id_tag)[:20])
         resp = await self.call(req)
         if resp.status == RemoteStartStopStatus.accepted:
             return True
@@ -1492,6 +1551,11 @@ class ChargePoint(cp):
         elif connector_id == 1:
             self._metrics[cstat.status_connector.value].value = status
             self._metrics[cstat.error_code_connector.value].value = error_code
+            if (
+                status == ChargePointStatus.available.value
+                and self.active_transaction_id == 0
+            ):
+                self._metrics[cstat.id_tag.value].value = None
         if connector_id >= 1:
             self._metrics[cstat.status_connector.value].extra_attr[
                 connector_id
@@ -1703,6 +1767,7 @@ class ChargePoint(cp):
         )
         self.active_transaction_id = 0
         self._cancel_auto_stop()
+        self._metrics[cstat.id_tag.value].value = None
         self._metrics[csess.current_user.value].value = None
         self._metrics[csess.current_user.value].extra_attr = {}
         self._metrics[cstat.stop_reason.value].value = kwargs.get(om.reason.name, None)

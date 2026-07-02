@@ -190,6 +190,7 @@ def test_current_user_metric_maps_id_tag_to_managed_user():
         "id_tag": "ABC",
         "user_id": "lukas",
     }
+    assert charge_point._metrics[cstat.id_tag.value].value == "ABC"
 
     charge_point.on_stop_transaction(
         meter_stop=2000,
@@ -197,6 +198,7 @@ def test_current_user_metric_maps_id_tag_to_managed_user():
         transaction_id=charge_point.active_transaction_id,
     )
 
+    assert charge_point._metrics[cstat.id_tag.value].value is None
     assert charge_point._metrics[csess.current_user.value].value is None
     assert charge_point._metrics[csess.current_user.value].extra_attr == {}
     assert charge_point._metrics[csess.monthly_energy.value].value == 1.0
@@ -204,6 +206,52 @@ def test_current_user_metric_maps_id_tag_to_managed_user():
         "reset_cycle"
     ] == "monthly"
     assert charge_point.central.user_registry.stop_recorded is True
+
+
+def test_available_status_clears_authorized_id_tag_without_transaction():
+    """Test idTag is cleared when authorization expires before a transaction starts."""
+
+    class UserRegistryStub:
+        """Minimal user registry test double."""
+
+        def get_authorization_status(self, id_tag):
+            """Accept the managed idTag."""
+            return AuthorizationStatus.accepted.value
+
+    class HassStub:
+        """Minimal Home Assistant test double."""
+
+        def async_create_task(self, task):
+            """Close scheduled coroutine from central.update."""
+            task.close()
+
+    async def update(_cpid):
+        return None
+
+    charge_point = object.__new__(OcppChargePoint)
+    charge_point.id = "charger"
+    charge_point.hass = HassStub()
+    charge_point.central = SimpleNamespace(
+        cpid="charger",
+        config={},
+        user_registry=UserRegistryStub(),
+        update=update,
+    )
+    charge_point.active_transaction_id = 0
+    charge_point._metrics = defaultdict(lambda: Metric(None, None))
+    charge_point._cancel_auto_stop = lambda: None
+
+    charge_point.on_authorize(id_tag="ABC")
+
+    assert charge_point._metrics[cstat.id_tag.value].value == "ABC"
+
+    charge_point.on_status_notification(
+        connector_id=1,
+        error_code=ChargePointErrorCode.no_error.value,
+        status=ChargePointStatus.available.value,
+    )
+
+    assert charge_point._metrics[cstat.id_tag.value].value is None
 
 
 @pytest.mark.timeout(90)  # Set timeout for this test

@@ -149,7 +149,11 @@
         },
         "button": {
             "reset": {"name": "Reset"},
+            "start_selected_user_charge": {"name": "Start selected user charge"},
             "unlock": {"name": "Unlock"}
+        },
+        "select": {
+            "charge_start_user": {"name": "Charge start user"}
         }
     },
     "options": {

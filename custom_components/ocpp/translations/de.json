@@ -148,7 +148,13 @@
         },
         "button": {
             "reset": {"name": "Neustart"},
+            "start_selected_user_charge": {
+                "name": "Ladevorgang für Auswahl starten"
+            },
             "unlock": {"name": "Entriegeln"}
+        },
+        "select": {
+            "charge_start_user": {"name": "Nutzer für Ladestart"}
         }
     },
     "options": {
