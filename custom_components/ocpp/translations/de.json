@@ -132,6 +132,21 @@
             "vendor": {"name": "Hersteller"},
             "version_firmware": {"name": "Firmwareversion"},
             "voltage": {"name": "Spannung"}
+        },
+        "number": {
+            "auto_stop_delay": {"name": "Auto-Stopp-Verzögerung"},
+            "maximum_current": {"name": "Maximaler Ladestrom"}
+        },
+        "switch": {
+            "auto_stop_on_evse_suspended": {
+                "name": "Auto-Stopp bei EVSE-Unterbrechung"
+            },
+            "availability": {"name": "Verfügbarkeit"},
+            "charge_control": {"name": "Ladesteuerung"}
+        },
+        "button": {
+            "reset": {"name": "Neustart"},
+            "unlock": {"name": "Entriegeln"}
         }
     },
     "options": {

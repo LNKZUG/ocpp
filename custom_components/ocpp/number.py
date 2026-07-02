@@ -43,6 +43,7 @@ NUMBERS: Final = [
     OcppNumberDescription(
         key="maximum_current",
         name="Maximum Current",
+        translation_key="maximum_current",
         icon=ICON,
         initial_value=DEFAULT_MAX_CURRENT,
         native_min_value=0,
@@ -53,6 +54,7 @@ NUMBERS: Final = [
     OcppNumberDescription(
         key="auto_stop_delay",
         name="Auto Stop Delay",
+        translation_key="auto_stop_delay",
         icon="mdi:timer-outline",
         initial_value=DEFAULT_AUTO_STOP_DELAY,
         native_min_value=0,
@@ -101,7 +103,7 @@ class OcppNumber(RestoreNumber, NumberEntity):
         self._attr_unique_id = ".".join(
             [NUMBER_DOMAIN, self.cp_id, self.entity_description.key]
         )
-        self._attr_name = self.entity_description.name
+        self._attr_translation_key = self.entity_description.translation_key
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self.cp_id)},
             via_device=(DOMAIN, self.central_system.id),

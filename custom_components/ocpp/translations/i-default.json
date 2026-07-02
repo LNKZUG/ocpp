@@ -59,5 +59,20 @@
         "abort": {
             "single_instance_allowed": "Only a single instance is allowed."
         }
+    },
+    "entity": {
+        "number": {
+            "auto_stop_delay": {"name": "Auto Stop Delay"},
+            "maximum_current": {"name": "Maximum Current"}
+        },
+        "switch": {
+            "auto_stop_on_evse_suspended": {"name": "Auto Stop On EVSE Suspended"},
+            "availability": {"name": "Availability"},
+            "charge_control": {"name": "Charge Control"}
+        },
+        "button": {
+            "reset": {"name": "Reset"},
+            "unlock": {"name": "Unlock"}
+        }
     }
 }

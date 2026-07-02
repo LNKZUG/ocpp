@@ -2,14 +2,24 @@
 
 from datetime import datetime
 
+from custom_components.ocpp.const import DEFAULT_DISABLED_METRICS
 from custom_components.ocpp.sensor import (
+    ChargePointMetric,
+    OcppSensorDescription,
     UserIdTagsSensor,
     UserLastSessionEnergySensor,
     UserLastSessionFinishedSensor,
     UserStatusSensor,
     metric_display_name,
+    metric_translation_key,
     user_entities,
 )
+
+
+class CentralSystemStub:
+    """Minimal central system test double."""
+
+    id = "central"
 
 
 class RegistryStub:
@@ -42,6 +52,39 @@ def test_metric_display_name():
     assert metric_display_name("SoC") == "SoC"
     assert metric_display_name("RPM") == "RPM"
     assert metric_display_name("Transaction.Id") == "Transaction ID"
+
+
+def test_unsupported_metrics_are_disabled_by_default():
+    """Test noisy charge point metrics are hidden until explicitly enabled."""
+    assert "SoC" in DEFAULT_DISABLED_METRICS
+    assert "Power.Offered" in DEFAULT_DISABLED_METRICS
+    assert "Heartbeat" in DEFAULT_DISABLED_METRICS
+    assert "Temperature" not in DEFAULT_DISABLED_METRICS
+
+    disabled_metric = OcppSensorDescription(
+        key="soc",
+        name="SoC",
+        metric="SoC",
+        translation_key=metric_translation_key("SoC"),
+        enabled_default=False,
+    )
+    active_metric = OcppSensorDescription(
+        key="temperature",
+        name="Temperature",
+        metric="Temperature",
+        translation_key=metric_translation_key("Temperature"),
+        enabled_default=True,
+    )
+
+    disabled_entity = ChargePointMetric(
+        None, CentralSystemStub(), "charger", disabled_metric
+    )
+    active_entity = ChargePointMetric(
+        None, CentralSystemStub(), "charger", active_metric
+    )
+
+    assert disabled_entity._attr_entity_registry_enabled_default is False
+    assert active_entity._attr_entity_registry_enabled_default is True
 
 
 def test_user_entities_expose_user_details():

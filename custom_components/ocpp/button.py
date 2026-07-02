@@ -28,6 +28,7 @@ BUTTONS: Final = [
     OcppButtonDescription(
         key="reset",
         name="Reset",
+        translation_key="reset",
         device_class=ButtonDeviceClass.RESTART,
         entity_category=EntityCategory.CONFIG,
         press_action=HAChargerServices.service_reset.name,
@@ -35,6 +36,7 @@ BUTTONS: Final = [
     OcppButtonDescription(
         key="unlock",
         name="Unlock",
+        translation_key="unlock",
         device_class=ButtonDeviceClass.UPDATE,
         entity_category=EntityCategory.CONFIG,
         press_action=HAChargerServices.service_unlock.name,
@@ -75,7 +77,7 @@ class ChargePointButton(ButtonEntity):
         self._attr_unique_id = ".".join(
             [BUTTON_DOMAIN, DOMAIN, self.cp_id, self.entity_description.key]
         )
-        self._attr_name = self.entity_description.name
+        self._attr_translation_key = self.entity_description.translation_key
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self.cp_id)},
             via_device=(DOMAIN, self.central_system.id),

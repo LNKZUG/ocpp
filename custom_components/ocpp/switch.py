@@ -45,6 +45,7 @@ SWITCHES: Final = [
     OcppSwitchDescription(
         key="charge_control",
         name="Charge Control",
+        translation_key="charge_control",
         icon=ICON,
         on_action=HAChargerServices.service_charge_start.name,
         off_action=HAChargerServices.service_charge_stop.name,
@@ -58,6 +59,7 @@ SWITCHES: Final = [
     OcppSwitchDescription(
         key="availability",
         name="Availability",
+        translation_key="availability",
         icon=ICON,
         on_action=HAChargerServices.service_availability.name,
         off_action=HAChargerServices.service_availability.name,
@@ -68,6 +70,7 @@ SWITCHES: Final = [
     OcppSwitchDescription(
         key="auto_stop_on_evse_suspended",
         name="Auto Stop On EVSE Suspended",
+        translation_key="auto_stop_on_evse_suspended",
         icon="mdi:timer-stop-outline",
         default_state=DEFAULT_AUTO_STOP_ON_EVSE_SUSPENDED,
     ),
@@ -107,7 +110,7 @@ class ChargePointSwitch(SwitchEntity):
         self._attr_unique_id = ".".join(
             [SWITCH_DOMAIN, DOMAIN, self.cp_id, self.entity_description.key]
         )
-        self._attr_name = self.entity_description.name
+        self._attr_translation_key = self.entity_description.translation_key
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self.cp_id)},
             via_device=(DOMAIN, self.central_system.id),

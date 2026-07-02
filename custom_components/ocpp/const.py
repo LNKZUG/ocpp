@@ -107,6 +107,30 @@ MEASURANDS = [
 ]
 DEFAULT_MEASURAND = Measurand.energy_active_import_register.value
 DEFAULT_MONITORED_VARIABLES = ",".join(MEASURANDS)
+DEFAULT_DISABLED_METRICS = {
+    Measurand.current_export.value,
+    Measurand.energy_active_export_interval.value,
+    Measurand.energy_active_export_register.value,
+    Measurand.energy_active_import_interval.value,
+    Measurand.energy_reactive_export_interval.value,
+    Measurand.energy_reactive_export_register.value,
+    Measurand.energy_reactive_import_interval.value,
+    Measurand.energy_reactive_import_register.value,
+    Measurand.frequency.value,
+    Measurand.power_active_export.value,
+    Measurand.power_factor.value,
+    Measurand.power_offered.value,
+    Measurand.power_reactive_export.value,
+    Measurand.power_reactive_import.value,
+    Measurand.rpm.value,
+    Measurand.soc.value,
+    "Error.Code",
+    "Heartbeat",
+    "Status",
+    "Status.Firmware",
+    "Timestamp.Data.Response",
+    "Timestamp.Data.Transfer",
+}
 DEFAULT_ENERGY_UNIT = UnitOfMeasure.wh.value
 DEFAULT_POWER_UNIT = UnitOfMeasure.w.value
 HA_ENERGY_UNIT = UnitOfMeasure.kwh.value

@@ -26,6 +26,7 @@ from .const import (
     DATA_USERS_UPDATED,
     DEFAULT_CLASS_UNITS_HA,
     DEFAULT_CPID,
+    DEFAULT_DISABLED_METRICS,
     DOMAIN,
     ENTRY_TYPE,
     ENTRY_TYPE_USERS,
@@ -48,6 +49,7 @@ class OcppSensorDescription(SensorEntityDescription):
     """Class to describe a Sensor entity."""
 
     metric: str | None = None
+    enabled_default: bool = True
 
 
 STATUS_TRANSLATION_OPTIONS = [
@@ -98,6 +100,7 @@ async def async_setup_entry(hass, entry, async_add_devices):
                 name=metric_display_name(metric),
                 metric=metric,
                 translation_key=metric_translation_key(metric),
+                enabled_default=metric not in DEFAULT_DISABLED_METRICS,
             )
         )
     for metric in list(HAChargerStatuses) + list(HAChargerDetails):
@@ -108,6 +111,7 @@ async def async_setup_entry(hass, entry, async_add_devices):
                 metric=metric,
                 translation_key=metric_translation_key(metric),
                 entity_category=EntityCategory.DIAGNOSTIC,
+                enabled_default=metric not in DEFAULT_DISABLED_METRICS,
             )
         )
 
@@ -191,8 +195,10 @@ class ChargePointMetric(RestoreSensor, SensorEntity):
         self._attr_unique_id = ".".join(
             [DOMAIN, self.cp_id, self.entity_description.key, SENSOR_DOMAIN]
         )
-        self._attr_name = self.entity_description.name
         self._attr_translation_key = self.entity_description.translation_key
+        self._attr_entity_registry_enabled_default = (
+            self.entity_description.enabled_default
+        )
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self.cp_id)},
             via_device=(DOMAIN, self.central_system.id),
