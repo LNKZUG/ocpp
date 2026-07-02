@@ -1,5 +1,5 @@
 """Test ocpp config flow."""
-from unittest.mock import patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from homeassistant import config_entries, data_entry_flow
 from ocpp.v16.enums import AuthorizationStatus
@@ -10,6 +10,7 @@ from custom_components.ocpp.const import (  # BINARY_SENSOR,; PLATFORMS,; SENSOR
     CONF_DEFAULT_AUTH_STATUS,
     DOMAIN,
 )
+from custom_components.ocpp.user_registry import OcppUserRegistry
 
 from .const import MOCK_CONFIG, MOCK_CONFIG_DATA
 
@@ -112,6 +113,7 @@ class _MockUserRegistry:
         ]
         self.added_user = None
         self.updated_user = None
+        self.deleted_user_id = None
 
     @staticmethod
     def parse_id_tags(value):
@@ -137,6 +139,10 @@ class _MockUserRegistry:
     async def async_update_user(self, user_id, **changes):
         """Record updated user."""
         self.updated_user = {"user_id": user_id, **changes}
+
+    async def async_delete_user(self, user_id):
+        """Record deleted user."""
+        self.deleted_user_id = user_id
 
 
 async def test_options_add_user_ok_returns_to_main_menu(hass):
@@ -227,6 +233,55 @@ async def test_options_toggle_user_ok_returns_to_main_menu(hass):
     assert result["type"] == data_entry_flow.RESULT_TYPE_MENU
     assert result["step_id"] == "init"
     assert registry.updated_user == {"user_id": "user-1", "active": False}
+
+
+async def test_options_delete_user_ok_returns_to_main_menu(hass):
+    """Test deleting a user returns to the options main menu."""
+    registry = _MockUserRegistry()
+    _, result = await _init_options_flow(hass)
+
+    with patch(
+        "custom_components.ocpp.config_flow.async_get_user_registry",
+        return_value=registry,
+    ):
+        result = await _select_options_menu_item(
+            hass, result["flow_id"], "delete_user"
+        )
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], user_input={"user_id": "user-1"}
+        )
+        assert result["type"] == data_entry_flow.RESULT_TYPE_FORM
+        assert result["step_id"] == "delete_user_form"
+
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], user_input={"confirm_delete": True}
+        )
+
+    assert result["type"] == data_entry_flow.RESULT_TYPE_MENU
+    assert result["step_id"] == "init"
+    assert registry.deleted_user_id == "user-1"
+
+
+async def test_user_registry_delete_user_removes_user_and_sessions(hass):
+    """Test deleting a user removes stored data for that user."""
+    registry = OcppUserRegistry(hass)
+    registry.users = {
+        "user-1": {"user_id": "user-1", "name": "Test User"},
+        "user-2": {"user_id": "user-2", "name": "Other User"},
+    }
+    registry.sessions = {
+        "charger:1": {"user_id": "user-1"},
+        "charger:2": {"user_id": "user-2"},
+    }
+    registry.async_save = AsyncMock()
+    registry.notify_updated = Mock()
+
+    await registry.async_delete_user("user-1")
+
+    assert "user-1" not in registry.users
+    assert registry.sessions == {"charger:2": {"user_id": "user-2"}}
+    registry.async_save.assert_awaited_once()
+    registry.notify_updated.assert_called_once()
 
 
 # In this case, we want to simulate a failure during the config flow.

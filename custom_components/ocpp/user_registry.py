@@ -168,6 +168,17 @@ class OcppUserRegistry:
         await self.async_save()
         self.notify_updated()
 
+    async def async_delete_user(self, user_id: str) -> None:
+        """Delete a managed OCPP user."""
+        self.users.pop(user_id)
+        self.sessions = {
+            session_key: session
+            for session_key, session in self.sessions.items()
+            if session.get("user_id") != user_id
+        }
+        await self.async_save()
+        self.notify_updated()
+
     @callback
     def record_start_transaction(
         self,

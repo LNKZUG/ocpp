@@ -145,7 +145,8 @@
                     "settings": "Settings",
                     "add_user": "Add user",
                     "edit_user": "Edit user",
-                    "toggle_user": "Activate/deactivate user"
+                    "toggle_user": "Activate/deactivate user",
+                    "delete_user": "Delete user"
                 }
             },
             "settings": {
@@ -187,6 +188,18 @@
                 "title": "Activate/deactivate OCPP user",
                 "data": {
                     "active": "Active"
+                }
+            },
+            "delete_user": {
+                "title": "Delete OCPP user",
+                "data": {
+                    "user_id": "User"
+                }
+            },
+            "delete_user_form": {
+                "title": "Delete OCPP user",
+                "data": {
+                    "confirm_delete": "Confirm delete"
                 }
             }
         },

@@ -142,7 +142,8 @@
                     "settings": "Einstellungen",
                     "add_user": "Nutzer anlegen",
                     "edit_user": "Nutzer bearbeiten",
-                    "toggle_user": "Nutzer aktivieren/deaktivieren"
+                    "toggle_user": "Nutzer aktivieren/deaktivieren",
+                    "delete_user": "Nutzer loeschen"
                 }
             },
             "settings": {
@@ -184,6 +185,18 @@
                 "title": "OCPP Nutzer aktivieren/deaktivieren",
                 "data": {
                     "active": "Aktiv"
+                }
+            },
+            "delete_user": {
+                "title": "OCPP Nutzer loeschen",
+                "data": {
+                    "user_id": "Nutzer"
+                }
+            },
+            "delete_user_form": {
+                "title": "OCPP Nutzer loeschen",
+                "data": {
+                    "confirm_delete": "Loeschen bestaetigen"
                 }
             }
         },

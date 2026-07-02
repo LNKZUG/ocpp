@@ -142,7 +142,13 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         """Show the user-management main menu."""
         return self.async_show_menu(
             step_id="init",
-            menu_options=["settings", "add_user", "edit_user", "toggle_user"],
+            menu_options=[
+                "settings",
+                "add_user",
+                "edit_user",
+                "toggle_user",
+                "delete_user",
+            ],
         )
 
     async def _async_finish_to_main_menu(self, options=None):
@@ -321,6 +327,49 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             data_schema=vol.Schema(
                 {
                     vol.Optional("active", default=user.get("active", True)): bool,
+                }
+            ),
+        )
+
+    async def async_step_delete_user(self, user_input=None):
+        """Select a managed OCPP user to delete."""
+        registry = await async_get_user_registry(self.hass)
+        users = registry.list_users()
+        if not users:
+            return self.async_abort(reason="no_users")
+
+        if user_input is not None:
+            self._user_id = user_input["user_id"]
+            return await self.async_step_delete_user_form()
+
+        return self.async_show_form(
+            step_id="delete_user",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("user_id"): vol.In(
+                        {user["user_id"]: user["name"] for user in users}
+                    )
+                }
+            ),
+        )
+
+    async def async_step_delete_user_form(self, user_input=None):
+        """Confirm deleting a managed OCPP user."""
+        registry = await async_get_user_registry(self.hass)
+        user = registry.get_user(self._user_id)
+        if user is None:
+            return self.async_abort(reason="user_not_found")
+
+        if user_input is not None:
+            if user_input["confirm_delete"]:
+                await registry.async_delete_user(user["user_id"])
+            return await self.async_step_init()
+
+        return self.async_show_form(
+            step_id="delete_user_form",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional("confirm_delete", default=False): bool,
                 }
             ),
         )
