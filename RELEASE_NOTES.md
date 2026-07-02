@@ -1,5 +1,17 @@
 # Release Notes
 
+## v0.5.17 - Persistent current user restore
+
+Keeps managed-user attribution visible after Home Assistant restarts while a charging transaction is still active.
+
+### Fixed
+
+* Restores the wallbox `Current User` entity from the persisted active user session when `MeterValues` recover the active `Transaction.Id`.
+* Restores the matching wallbox `Id Tag` value from the persisted transaction session instead of leaving the active user empty after restart.
+* Keeps the charge-control switch off while a remote start is only waiting in `Preparing` or `SuspendedEV` and no transaction has started yet.
+* Cleans up accepted remote starts that never become a transaction by unlocking the connector and requesting a fresh status notification after the pending-start timeout.
+* Allows the `Id Tag` sensor to clear its restored state instead of showing a stale idTag after the backend value was reset.
+
 ## v0.5.16 - User remote-start controls and idTag cleanup
 
 Adds managed-user remote-start controls for Home Assistant and clears stale idTag state after ended or abandoned charging attempts.

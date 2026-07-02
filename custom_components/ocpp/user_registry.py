@@ -164,6 +164,15 @@ class OcppUserRegistry:
         """Return a unique key for a charger transaction."""
         return f"{cp_id}:{transaction_id}"
 
+    @callback
+    def get_session(
+        self, cp_id: str, transaction_id: int | str | None
+    ) -> dict[str, Any] | None:
+        """Return an active charging session."""
+        if transaction_id in (None, 0, "0"):
+            return None
+        return self.sessions.get(self.session_key(cp_id, int(transaction_id)))
+
     async def async_add_user(
         self, name: str, id_tags: str | list[str], active: bool = True
     ) -> str:

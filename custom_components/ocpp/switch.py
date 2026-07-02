@@ -130,7 +130,12 @@ class ChargePointSwitch(SwitchEntity):
             resp = self.central_system.get_metric(
                 self.cp_id, self.entity_description.metric_state
             )
-            if resp in self.entity_description.metric_condition:
+            if (
+                self.entity_description.key == "charge_control"
+                and not self.central_system.has_active_transaction(self.cp_id)
+            ):
+                self._state = False
+            elif resp in self.entity_description.metric_condition:
                 self._state = True
             else:
                 self._state = False

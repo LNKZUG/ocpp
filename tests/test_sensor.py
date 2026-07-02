@@ -5,7 +5,7 @@ from datetime import datetime
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 
 from custom_components.ocpp.const import DEFAULT_DISABLED_METRICS
-from custom_components.ocpp.enums import HAChargerSession
+from custom_components.ocpp.enums import HAChargerSession, HAChargerStatuses
 from custom_components.ocpp.sensor import (
     ChargePointMetric,
     OcppSensorDescription,
@@ -24,6 +24,14 @@ class CentralSystemStub:
     """Minimal central system test double."""
 
     id = "central"
+
+    def __init__(self, metrics=None):
+        """Initialize metric values."""
+        self.metrics = metrics or {}
+
+    def get_metric(self, cp_id, metric):
+        """Return a metric value."""
+        return self.metrics.get(metric)
 
 
 class RegistryStub:
@@ -129,6 +137,25 @@ def test_wallbox_current_user_and_monthly_energy_sensor_classes():
     assert current_user.state_class is None
     assert monthly_energy.device_class == SensorDeviceClass.ENERGY
     assert monthly_energy.state_class == SensorStateClass.TOTAL
+
+
+def test_id_tag_sensor_can_clear_restored_value():
+    """Test Id Tag sensor returns None instead of stale restored state."""
+    entity = ChargePointMetric(
+        None,
+        CentralSystemStub({HAChargerStatuses.id_tag.value: None}),
+        "charger",
+        OcppSensorDescription(
+            key="id_tag",
+            name="Id Tag",
+            metric=HAChargerStatuses.id_tag.value,
+            translation_key="id_tag",
+        ),
+    )
+    entity._attr_native_value = "02BE5E0E"
+
+    assert entity.native_value is None
+    assert entity._attr_native_value is None
 
 
 def test_user_entities_expose_user_details():

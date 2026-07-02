@@ -118,6 +118,8 @@ logging.getLogger(DOMAIN).setLevel(logging.INFO)
 # logging.getLogger("asyncio").setLevel(logging.DEBUG)
 # logging.getLogger("websockets").setLevel(logging.DEBUG)
 
+REMOTE_START_CLEANUP_DELAY = 180
+
 TIME_MINUTES = UnitOfTime.MINUTES
 
 
@@ -317,6 +319,12 @@ class CentralSystem:
             return self.charge_points[cp_id].auto_stop_on_evse_suspended
         return DEFAULT_AUTO_STOP_ON_EVSE_SUSPENDED
 
+    def has_active_transaction(self, cp_id: str):
+        """Return whether the charger has an active transaction."""
+        if cp_id in self.charge_points:
+            return self.charge_points[cp_id].active_transaction_id != 0
+        return False
+
     def set_auto_stop_on_evse_suspended(self, cp_id: str, value: bool):
         """Set whether EVSE suspend should automatically stop the transaction."""
         if cp_id in self.charge_points:
@@ -474,6 +482,7 @@ class ChargePoint(cp):
         self.post_connect_success = False
         self.tasks = None
         self._auto_stop_task = None
+        self._remote_start_cleanup_task = None
         self.auto_stop_on_evse_suspended = entry.data.get(
             CONF_AUTO_STOP_ON_EVSE_SUSPENDED,
             DEFAULT_AUTO_STOP_ON_EVSE_SUSPENDED,
@@ -887,6 +896,7 @@ class ChargePoint(cp):
         req = call.RemoteStartTransaction(connector_id=1, id_tag=str(id_tag)[:20])
         resp = await self.call(req)
         if resp.status == RemoteStartStopStatus.accepted:
+            self._schedule_remote_start_cleanup(str(id_tag)[:20])
             return True
         else:
             _LOGGER.warning("Failed with response: %s", resp.status)
@@ -920,6 +930,16 @@ class ChargePoint(cp):
         if self._auto_stop_task is not None and not self._auto_stop_task.done():
             self._auto_stop_task.cancel()
         self._auto_stop_task = None
+
+    def _cancel_remote_start_cleanup(self):
+        """Cancel pending remote-start cleanup."""
+        task = getattr(self, "_remote_start_cleanup_task", None)
+        if (
+            task is not None
+            and not task.done()
+        ):
+            task.cancel()
+        self._remote_start_cleanup_task = None
 
     def _has_active_import(self):
         """Return whether the charger currently reports meaningful import."""
@@ -992,6 +1012,44 @@ class ChargePoint(cp):
         finally:
             if self._auto_stop_task is asyncio.current_task():
                 self._auto_stop_task = None
+
+    def _schedule_remote_start_cleanup(self, id_tag: str):
+        """Schedule cleanup when a remote start never becomes a transaction."""
+        self._cancel_remote_start_cleanup()
+        self._remote_start_cleanup_task = self.hass.async_create_task(
+            self._cleanup_pending_remote_start(id_tag)
+        )
+
+    async def _cleanup_pending_remote_start(self, id_tag: str):
+        """Recover from a remote start that stayed pending without a transaction."""
+        try:
+            await asyncio.sleep(REMOTE_START_CLEANUP_DELAY)
+            if self.active_transaction_id != 0:
+                return
+            status = self._metrics[cstat.status_connector.value].value
+            if status not in (
+                ChargePointStatus.preparing.value,
+                ChargePointStatus.suspended_ev.value,
+                ChargePointStatus.suspended_evse.value,
+            ):
+                return
+
+            _LOGGER.info(
+                "%s cleans up pending RemoteStartTransaction for idTag %s after %.1f seconds in %s",
+                self.id,
+                id_tag,
+                REMOTE_START_CLEANUP_DELAY,
+                status,
+            )
+            await self.unlock()
+            await self.trigger_status_notification()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            _LOGGER.exception("%s failed to clean up pending remote start", self.id)
+        finally:
+            if self._remote_start_cleanup_task is asyncio.current_task():
+                self._remote_start_cleanup_task = None
 
     async def reset(self, typ: str = ResetType.hard):
         """Hard reset charger unless soft reset requested."""
@@ -1398,6 +1456,8 @@ class ChargePoint(cp):
                 )
             self._metrics[csess.transaction_id.value].value = value
             self.active_transaction_id = value
+        if self._metrics[csess.current_user.value].value is None:
+            self.restore_current_user_from_session(self.active_transaction_id)
 
         transaction_matches: bool = False
         # match is also false if no transaction is in progress ie active_transaction_id==transaction_id==0
@@ -1555,6 +1615,7 @@ class ChargePoint(cp):
                 status == ChargePointStatus.available.value
                 and self.active_transaction_id == 0
             ):
+                self._cancel_remote_start_cleanup()
                 self._metrics[cstat.id_tag.value].value = None
         if connector_id >= 1:
             self._metrics[cstat.status_connector.value].extra_attr[
@@ -1706,6 +1767,27 @@ class ChargePoint(cp):
         metric = self._metrics[csess.monthly_energy.value]
         metric.value = round(float(metric.value or 0.0) + session_energy_kwh, 6)
 
+    def restore_current_user_from_session(self, transaction_id: int | str | None):
+        """Restore current user state from the persisted registry session."""
+        if self.central.user_registry is None:
+            return
+        session = self.central.user_registry.get_session(
+            self.central.cpid, transaction_id
+        )
+        if session is None:
+            return
+        user = self.central.user_registry.get_user(session["user_id"])
+        if user is None:
+            return
+
+        id_tag = session.get("id_tag")
+        self._metrics[cstat.id_tag.value].value = id_tag
+        self._metrics[csess.current_user.value].value = user["name"]
+        self._metrics[csess.current_user.value].extra_attr = {
+            "id_tag": id_tag,
+            "user_id": user["user_id"],
+        }
+
     @on(Action.authorize)
     def on_authorize(self, id_tag, **kwargs):
         """Handle an Authorization request."""
@@ -1723,6 +1805,7 @@ class ChargePoint(cp):
             if self.central.user_registry is not None:
                 user = self.central.user_registry.get_user_for_id_tag(id_tag)
             self._cancel_auto_stop()
+            self._cancel_remote_start_cleanup()
             self.active_transaction_id = int(time.time())
             self._charger_reports_session_energy = False
             self._metrics[cstat.id_tag.value].value = id_tag
@@ -1767,6 +1850,7 @@ class ChargePoint(cp):
         )
         self.active_transaction_id = 0
         self._cancel_auto_stop()
+        self._cancel_remote_start_cleanup()
         self._metrics[cstat.id_tag.value].value = None
         self._metrics[csess.current_user.value].value = None
         self._metrics[csess.current_user.value].extra_attr = {}

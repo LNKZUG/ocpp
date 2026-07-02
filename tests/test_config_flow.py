@@ -319,6 +319,24 @@ def test_user_registry_adds_session_energy_to_current_month(hass):
     registry.notify_updated.assert_called_once()
 
 
+def test_user_registry_returns_active_session(hass):
+    """Test active sessions can be restored by charger and transaction id."""
+    registry = OcppUserRegistry(hass)
+    registry.sessions = {
+        "charger:1": {
+            "transaction_id": 1,
+            "user_id": "user-1",
+            "id_tag": "ABC",
+            "cp_id": "charger",
+        }
+    }
+
+    assert registry.get_session("charger", 1)["user_id"] == "user-1"
+    assert registry.get_session("charger", "1")["id_tag"] == "ABC"
+    assert registry.get_session("charger", 0) is None
+    assert registry.get_session("other", 1) is None
+
+
 def test_user_registry_resets_monthly_counter_on_month_change(hass):
     """Test monthly user energy resets when closing a session in a new month."""
     registry = OcppUserRegistry(hass)

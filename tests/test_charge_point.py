@@ -18,7 +18,9 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 import websockets
 
 from custom_components.ocpp import async_setup_entry, async_unload_entry
+import custom_components.ocpp.api as ocpp_api
 from custom_components.ocpp.api import (
+    CentralSystem,
     ChargePoint as OcppChargePoint,
     Metric,
     truncate_status_notification_info,
@@ -34,7 +36,7 @@ from custom_components.ocpp.enums import (
     Profiles as prof,
 )
 from custom_components.ocpp.number import NUMBERS
-from custom_components.ocpp.switch import SWITCHES
+from custom_components.ocpp.switch import ChargePointSwitch, SWITCHES
 from ocpp.routing import on
 from ocpp.v16 import ChargePoint as cpclass, call, call_result
 from ocpp.v16.enums import (
@@ -130,6 +132,44 @@ async def test_evse_suspended_auto_stop_sends_remote_stop():
     assert triggered is True
 
 
+async def test_pending_remote_start_cleanup_unlocks_and_refreshes(monkeypatch):
+    """Test a remote start that never becomes a transaction is cleaned up."""
+
+    unlocked = False
+    triggered = False
+
+    async def unlock():
+        nonlocal unlocked
+        unlocked = True
+        return True
+
+    async def trigger_status_notification():
+        nonlocal triggered
+        triggered = True
+        return True
+
+    monkeypatch.setattr(ocpp_api, "REMOTE_START_CLEANUP_DELAY", 0)
+
+    charge_point = object.__new__(OcppChargePoint)
+    charge_point.id = "test_cpid"
+    charge_point.hass = SimpleNamespace(async_create_task=asyncio.create_task)
+    charge_point._metrics = defaultdict(lambda: Metric(None, None))
+    charge_point._metrics[cstat.status_connector.value].value = (
+        ChargePointStatus.preparing.value
+    )
+    charge_point.active_transaction_id = 0
+    charge_point._remote_start_cleanup_task = None
+    charge_point.unlock = unlock
+    charge_point.trigger_status_notification = trigger_status_notification
+
+    charge_point._schedule_remote_start_cleanup("ABC")
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+
+    assert unlocked is True
+    assert triggered is True
+
+
 def test_current_user_metric_maps_id_tag_to_managed_user():
     """Test current wallbox user is mapped from the transaction idTag."""
 
@@ -208,6 +248,120 @@ def test_current_user_metric_maps_id_tag_to_managed_user():
     assert charge_point.central.user_registry.stop_recorded is True
 
 
+def test_remote_start_for_user_uses_managed_user_id_tag():
+    """Test user remote start uses the selected managed user's idTag."""
+
+    class UserRegistryStub:
+        """Minimal user registry test double."""
+
+        def get_user(self, user_id):
+            """Return a managed user."""
+            if user_id == "lukas":
+                return {
+                    "user_id": "lukas",
+                    "name": "Lukas",
+                    "id_tags": ["ABC"],
+                    "active": True,
+                }
+            return None
+
+    class ChargePointStub:
+        """Minimal charge point test double."""
+
+        def __init__(self):
+            self.started_id_tag = None
+
+        async def start_transaction(self, id_tag=None):
+            """Record remote start idTag."""
+            self.started_id_tag = id_tag
+            return True
+
+    charge_point = ChargePointStub()
+    central_system = object.__new__(CentralSystem)
+    central_system.user_registry = UserRegistryStub()
+    central_system.charge_points = {"charger": charge_point}
+
+    result = asyncio.run(
+        central_system.start_transaction_for_user("charger", "lukas")
+    )
+
+    assert result is True
+    assert charge_point.started_id_tag == "ABC"
+
+
+def test_remote_start_for_selected_user_uses_managed_user_id_tag():
+    """Test selected-user remote start uses the selected managed user's idTag."""
+
+    class UserRegistryStub:
+        """Minimal user registry test double."""
+
+        def get_user(self, user_id):
+            """Return a managed user."""
+            if user_id == "lukas":
+                return {
+                    "user_id": "lukas",
+                    "name": "Lukas",
+                    "id_tags": ["ABC"],
+                    "active": True,
+                }
+            return None
+
+    class ChargePointStub:
+        """Minimal charge point test double."""
+
+        def __init__(self):
+            self.started_id_tag = None
+
+        async def start_transaction(self, id_tag=None):
+            """Record remote start idTag."""
+            self.started_id_tag = id_tag
+            return True
+
+    charge_point = ChargePointStub()
+    central_system = object.__new__(CentralSystem)
+    central_system.user_registry = UserRegistryStub()
+    central_system.selected_user_ids = {"charger": "lukas"}
+    central_system.charge_points = {"charger": charge_point}
+
+    result = asyncio.run(central_system.start_transaction_for_selected_user("charger"))
+
+    assert result is True
+    assert charge_point.started_id_tag == "ABC"
+
+
+def test_charge_control_switch_requires_active_transaction():
+    """Test charge control is not on for waiting states without a transaction."""
+
+    class CentralSystemStub:
+        """Minimal central system test double."""
+
+        id = "central"
+
+        def __init__(self):
+            self.active = False
+
+        def get_available(self, cp_id):
+            """Return charger availability."""
+            return True
+
+        def get_metric(self, cp_id, metric):
+            """Return connector status."""
+            return ChargePointStatus.suspended_ev.value
+
+        def has_active_transaction(self, cp_id):
+            """Return active transaction state."""
+            return self.active
+
+    central_system = CentralSystemStub()
+    switch = ChargePointSwitch(central_system, "charger", SWITCHES[0])
+
+    assert switch.is_on is False
+
+    central_system.active = True
+
+    assert switch.is_on is True
+
+
 def test_available_status_clears_authorized_id_tag_without_transaction():
     """Test idTag is cleared when authorization expires before a transaction starts."""
 
@@ -252,6 +406,46 @@ def test_available_status_clears_authorized_id_tag_without_transaction():
     )
 
     assert charge_point._metrics[cstat.id_tag.value].value is None
+
+
+def test_current_user_restores_from_persisted_session():
+    """Test current wallbox user is restored from the active registry session."""
+
+    class UserRegistryStub:
+        """Minimal user registry test double."""
+
+        def get_session(self, cp_id, transaction_id):
+            """Return an active session for the transaction."""
+            if cp_id == "charger" and transaction_id == 123:
+                return {
+                    "transaction_id": 123,
+                    "user_id": "lukas",
+                    "id_tag": "ABC",
+                    "cp_id": "charger",
+                }
+            return None
+
+        def get_user(self, user_id):
+            """Return the managed user."""
+            if user_id == "lukas":
+                return {"user_id": "lukas", "name": "Lukas"}
+            return None
+
+    charge_point = object.__new__(OcppChargePoint)
+    charge_point.central = SimpleNamespace(
+        cpid="charger",
+        user_registry=UserRegistryStub(),
+    )
+    charge_point._metrics = defaultdict(lambda: Metric(None, None))
+
+    charge_point.restore_current_user_from_session(123)
+
+    assert charge_point._metrics[cstat.id_tag.value].value == "ABC"
+    assert charge_point._metrics[csess.current_user.value].value == "Lukas"
+    assert charge_point._metrics[csess.current_user.value].extra_attr == {
+        "id_tag": "ABC",
+        "user_id": "lukas",
+    }
 
 
 @pytest.mark.timeout(90)  # Set timeout for this test
