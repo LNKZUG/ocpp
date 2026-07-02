@@ -136,10 +136,22 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input=None):
         """Show the options menu."""
+        return self._show_main_menu()
+
+    def _show_main_menu(self):
+        """Show the user-management main menu."""
         return self.async_show_menu(
             step_id="init",
             menu_options=["settings", "add_user", "edit_user", "toggle_user"],
         )
+
+    async def _async_finish_to_main_menu(self, options=None):
+        """Persist options and return to the user-management main menu."""
+        if options is not None:
+            self.hass.config_entries.async_update_entry(
+                self._config_entry, options=options
+            )
+        return await self.async_step_init()
 
     async def async_step_settings(self, user_input=None):
         """Configure OCPP user defaults."""
@@ -151,12 +163,11 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         )
 
         if user_input is not None:
-            return self.async_create_entry(
-                title="",
-                data={
+            return await self._async_finish_to_main_menu(
+                {
                     **self._config_entry.options,
                     CONF_DEFAULT_AUTH_STATUS: user_input[CONF_DEFAULT_AUTH_STATUS],
-                },
+                }
             )
 
         return self.async_show_form(
@@ -191,7 +202,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 await registry.async_add_user(
                     user_input["name"], id_tags, user_input["active"]
                 )
-                return self.async_create_entry(title="", data=self._config_entry.options)
+                return await self.async_step_init()
 
         return self.async_show_form(
             step_id="add_user",
@@ -248,7 +259,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     id_tags=id_tags,
                     active=user_input["active"],
                 )
-                return self.async_create_entry(title="", data=self._config_entry.options)
+                return await self.async_step_init()
 
         return self.async_show_form(
             step_id="edit_user_form",
@@ -272,13 +283,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             return self.async_abort(reason="no_users")
 
         if user_input is not None:
-            user = registry.get_user(user_input["user_id"])
-            if user is None:
-                return self.async_abort(reason="user_not_found")
-            await registry.async_update_user(
-                user["user_id"], active=not user.get("active", True)
-            )
-            return self.async_create_entry(title="", data=self._config_entry.options)
+            self._user_id = user_input["user_id"]
+            return await self.async_step_toggle_user_form()
 
         return self.async_show_form(
             step_id="toggle_user",
@@ -293,6 +299,28 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                             for user in users
                         }
                     )
+                }
+            ),
+        )
+
+    async def async_step_toggle_user_form(self, user_input=None):
+        """Set the active state for a managed OCPP user."""
+        registry = await async_get_user_registry(self.hass)
+        user = registry.get_user(self._user_id)
+        if user is None:
+            return self.async_abort(reason="user_not_found")
+
+        if user_input is not None:
+            await registry.async_update_user(
+                user["user_id"], active=user_input["active"]
+            )
+            return await self.async_step_init()
+
+        return self.async_show_form(
+            step_id="toggle_user_form",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional("active", default=user.get("active", True)): bool,
                 }
             ),
         )

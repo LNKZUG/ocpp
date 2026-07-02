@@ -2,15 +2,16 @@
 from unittest.mock import patch
 
 from homeassistant import config_entries, data_entry_flow
+from ocpp.v16.enums import AuthorizationStatus
 import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ocpp.const import (  # BINARY_SENSOR,; PLATFORMS,; SENSOR,; SWITCH,
+    CONF_DEFAULT_AUTH_STATUS,
     DOMAIN,
 )
 
 from .const import MOCK_CONFIG, MOCK_CONFIG_DATA
-
-# from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 
 # This fixture bypasses the actual setup of the integration
@@ -55,6 +56,177 @@ async def test_successful_config_flow(hass, bypass_get_data):
     assert result["title"] == "test_csid"
     assert result["data"] == MOCK_CONFIG_DATA
     assert result["result"]
+
+
+async def _init_options_flow(hass):
+    entry = MockConfigEntry(
+        domain=DOMAIN, data=MOCK_CONFIG_DATA, options={}, entry_id="test_options"
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+
+    assert result["type"] == data_entry_flow.RESULT_TYPE_MENU
+    assert result["step_id"] == "init"
+    return entry, result
+
+
+async def _select_options_menu_item(hass, flow_id, next_step_id):
+    result = await hass.config_entries.options.async_configure(
+        flow_id, user_input={"next_step_id": next_step_id}
+    )
+
+    assert result["type"] == data_entry_flow.RESULT_TYPE_FORM
+    assert result["step_id"] == next_step_id
+    return result
+
+
+async def test_options_settings_ok_returns_to_main_menu(hass):
+    """Test saving settings returns to the options main menu."""
+    entry, result = await _init_options_flow(hass)
+    result = await _select_options_menu_item(hass, result["flow_id"], "settings")
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_DEFAULT_AUTH_STATUS: AuthorizationStatus.blocked.value,
+        },
+    )
+
+    assert result["type"] == data_entry_flow.RESULT_TYPE_MENU
+    assert result["step_id"] == "init"
+    assert entry.options[CONF_DEFAULT_AUTH_STATUS] == AuthorizationStatus.blocked.value
+
+
+class _MockUserRegistry:
+    """Minimal user registry for options flow tests."""
+
+    def __init__(self):
+        self.users = [
+            {
+                "user_id": "user-1",
+                "name": "Test User",
+                "id_tags": ["ABC"],
+                "active": True,
+            }
+        ]
+        self.added_user = None
+        self.updated_user = None
+
+    @staticmethod
+    def parse_id_tags(value):
+        """Parse test idTags."""
+        return [tag.strip() for tag in value.split(",") if tag.strip()]
+
+    def find_conflicting_id_tags(self, id_tags, user_id=None):
+        """Return no conflicts in tests."""
+        return []
+
+    def list_users(self):
+        """Return test users."""
+        return self.users
+
+    def get_user(self, user_id):
+        """Return a test user by id."""
+        return next((user for user in self.users if user["user_id"] == user_id), None)
+
+    async def async_add_user(self, name, id_tags, active):
+        """Record added user."""
+        self.added_user = {"name": name, "id_tags": id_tags, "active": active}
+
+    async def async_update_user(self, user_id, **changes):
+        """Record updated user."""
+        self.updated_user = {"user_id": user_id, **changes}
+
+
+async def test_options_add_user_ok_returns_to_main_menu(hass):
+    """Test adding a user returns to the options main menu."""
+    registry = _MockUserRegistry()
+    _, result = await _init_options_flow(hass)
+    result = await _select_options_menu_item(hass, result["flow_id"], "add_user")
+
+    with patch(
+        "custom_components.ocpp.config_flow.async_get_user_registry",
+        return_value=registry,
+    ):
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            user_input={
+                "name": "New User",
+                "id_tags": "TAG1, TAG2",
+                "active": True,
+            },
+        )
+
+    assert result["type"] == data_entry_flow.RESULT_TYPE_MENU
+    assert result["step_id"] == "init"
+    assert registry.added_user == {
+        "name": "New User",
+        "id_tags": ["TAG1", "TAG2"],
+        "active": True,
+    }
+
+
+async def test_options_edit_user_ok_returns_to_main_menu(hass):
+    """Test editing a user returns to the options main menu."""
+    registry = _MockUserRegistry()
+    _, result = await _init_options_flow(hass)
+
+    with patch(
+        "custom_components.ocpp.config_flow.async_get_user_registry",
+        return_value=registry,
+    ):
+        result = await _select_options_menu_item(hass, result["flow_id"], "edit_user")
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], user_input={"user_id": "user-1"}
+        )
+        assert result["type"] == data_entry_flow.RESULT_TYPE_FORM
+        assert result["step_id"] == "edit_user_form"
+
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            user_input={
+                "name": "Updated User",
+                "id_tags": "XYZ",
+                "active": False,
+            },
+        )
+
+    assert result["type"] == data_entry_flow.RESULT_TYPE_MENU
+    assert result["step_id"] == "init"
+    assert registry.updated_user == {
+        "user_id": "user-1",
+        "name": "Updated User",
+        "id_tags": ["XYZ"],
+        "active": False,
+    }
+
+
+async def test_options_toggle_user_ok_returns_to_main_menu(hass):
+    """Test changing a user's active state returns to the options main menu."""
+    registry = _MockUserRegistry()
+    _, result = await _init_options_flow(hass)
+
+    with patch(
+        "custom_components.ocpp.config_flow.async_get_user_registry",
+        return_value=registry,
+    ):
+        result = await _select_options_menu_item(
+            hass, result["flow_id"], "toggle_user"
+        )
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], user_input={"user_id": "user-1"}
+        )
+        assert result["type"] == data_entry_flow.RESULT_TYPE_FORM
+        assert result["step_id"] == "toggle_user_form"
+
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], user_input={"active": False}
+        )
+
+    assert result["type"] == data_entry_flow.RESULT_TYPE_MENU
+    assert result["step_id"] == "init"
+    assert registry.updated_user == {"user_id": "user-1", "active": False}
 
 
 # In this case, we want to simulate a failure during the config flow.

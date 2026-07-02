@@ -182,6 +182,12 @@
                 "data": {
                     "user_id": "User"
                 }
+            },
+            "toggle_user_form": {
+                "title": "Activate/deactivate OCPP user",
+                "data": {
+                    "active": "Active"
+                }
             }
         },
         "error": {
