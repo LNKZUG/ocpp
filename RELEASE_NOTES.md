@@ -1,5 +1,14 @@
 # Release Notes
 
+## v0.5.15 - HACS sortable counter release
+
+Republishes the user and wallbox counter release with a three-part version number so HACS sorts it above `v0.5.6.9`.
+
+### Fixed
+
+* Uses a HACS-friendly version sequence after `v0.5.6.9`, avoiding four-part versions such as `v0.5.6.11` being listed below `v0.5.6.9`.
+* Keeps release ZIP manifests on plain semantic versions without a leading `v`.
+
 ## v0.5.6.11 - HACS release version fix
 
 Fixes the HACS release package generated for the user and wallbox counter release.
