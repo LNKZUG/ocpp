@@ -10,7 +10,7 @@ from homeassistant.components.switch import (
     SwitchEntityDescription,
 )
 from homeassistant.const import UnitOfPower
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 
 from ocpp.v16.enums import ChargePointStatus
 
@@ -72,6 +72,7 @@ SWITCHES: Final = [
         name="Auto Stop On EVSE Suspended",
         translation_key="auto_stop_on_evse_suspended",
         icon="mdi:timer-stop-outline",
+        entity_category=EntityCategory.CONFIG,
         default_state=DEFAULT_AUTO_STOP_ON_EVSE_SUSPENDED,
     ),
 ]

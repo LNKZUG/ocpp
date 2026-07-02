@@ -13,7 +13,7 @@ from homeassistant.components.number import (
 from homeassistant.const import UnitOfElectricCurrent, UnitOfTime
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 
 from .api import CentralSystem
 from .const import (
@@ -56,6 +56,7 @@ NUMBERS: Final = [
         name="Auto Stop Delay",
         translation_key="auto_stop_delay",
         icon="mdi:timer-outline",
+        entity_category=EntityCategory.CONFIG,
         initial_value=DEFAULT_AUTO_STOP_DELAY,
         native_min_value=0,
         native_max_value=300,
