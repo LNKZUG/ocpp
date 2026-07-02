@@ -143,13 +143,13 @@
                     "add_user": "Nutzer anlegen",
                     "edit_user": "Nutzer bearbeiten",
                     "toggle_user": "Nutzer aktivieren/deaktivieren",
-                    "delete_user": "Nutzer loeschen"
+                    "delete_user": "Nutzer löschen"
                 }
             },
             "settings": {
                 "title": "OCPP Nutzer-Einstellungen",
                 "data": {
-                    "default_authorization_status": "Standardstatus fuer unbekannte idTags"
+                    "default_authorization_status": "Standardstatus für unbekannte idTags"
                 }
             },
             "add_user": {
@@ -188,15 +188,15 @@
                 }
             },
             "delete_user": {
-                "title": "OCPP Nutzer loeschen",
+                "title": "OCPP Nutzer löschen",
                 "data": {
                     "user_id": "Nutzer"
                 }
             },
             "delete_user_form": {
-                "title": "OCPP Nutzer loeschen",
+                "title": "OCPP Nutzer löschen",
                 "data": {
-                    "confirm_delete": "Loeschen bestaetigen"
+                    "confirm_delete": "Löschen bestätigen"
                 }
             }
         },
@@ -206,7 +206,7 @@
         },
         "abort": {
             "no_users": "Es wurden noch keine OCPP Nutzer angelegt.",
-            "user_not_found": "Der ausgewaehlte OCPP Nutzer existiert nicht mehr."
+            "user_not_found": "Der ausgewählte OCPP Nutzer existiert nicht mehr."
         }
     }
 }
