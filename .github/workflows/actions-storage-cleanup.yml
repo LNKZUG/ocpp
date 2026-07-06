@@ -1,0 +1,134 @@
+name: Actions Storage Cleanup
+
+on:
+  push:
+    branches:
+      - lnkzug-v0.5.6-known-working
+    paths:
+      - .github/workflows/actions-storage-cleanup.yml
+  workflow_dispatch:
+    inputs:
+      run_keep_days:
+        description: Delete completed workflow runs older than this many days.
+        required: true
+        default: "7"
+      artifact_keep_days:
+        description: Delete artifacts older than this many days. Use 0 for all existing artifacts.
+        required: true
+        default: "0"
+      cache_keep_days:
+        description: Delete caches not used for this many days. Use 0 for all existing caches.
+        required: true
+        default: "0"
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cleanup:
+    name: Delete old Actions storage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete old artifacts, runs and caches
+        uses: actions/github-script@v7
+        env:
+          RUN_KEEP_DAYS: ${{ github.event.inputs.run_keep_days || '7' }}
+          ARTIFACT_KEEP_DAYS: ${{ github.event.inputs.artifact_keep_days || '0' }}
+          CACHE_KEEP_DAYS: ${{ github.event.inputs.cache_keep_days || '0' }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            function parseDays(name) {
+              const value = Number.parseInt(process.env[name], 10);
+              if (!Number.isInteger(value) || value < 0) {
+                throw new Error(`Invalid ${name}: ${process.env[name]}`);
+              }
+              return value;
+            }
+
+            const runKeepDays = parseDays('RUN_KEEP_DAYS');
+            const artifactKeepDays = parseDays('ARTIFACT_KEEP_DAYS');
+            const cacheKeepDays = parseDays('CACHE_KEEP_DAYS');
+            const now = Date.now();
+            const runCutoff = new Date(now - runKeepDays * 24 * 60 * 60 * 1000);
+            const artifactCutoff = new Date(now - artifactKeepDays * 24 * 60 * 60 * 1000);
+            const cacheCutoff = new Date(now - cacheKeepDays * 24 * 60 * 60 * 1000);
+
+            try {
+              await github.request(
+                'PUT /repos/{owner}/{repo}/actions/permissions/artifact-and-log-retention',
+                { owner, repo, days: 1 }
+              );
+              core.info('Repository artifact/log retention set to 1 day.');
+            } catch (error) {
+              core.warning(`Could not update repository retention setting: ${error.message}`);
+            }
+
+            const artifacts = await github.paginate(github.rest.actions.listArtifactsForRepo, {
+              owner,
+              repo,
+              per_page: 100,
+            });
+
+            let artifactCount = 0;
+            let artifactBytes = 0;
+            for (const artifact of artifacts) {
+              if (new Date(artifact.created_at) > artifactCutoff) {
+                continue;
+              }
+              artifactCount += 1;
+              artifactBytes += artifact.size_in_bytes || 0;
+              core.info(`Deleting artifact ${artifact.name} (${artifact.id})`);
+              await github.rest.actions.deleteArtifact({ owner, repo, artifact_id: artifact.id });
+            }
+
+            const workflowRuns = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
+              owner,
+              repo,
+              per_page: 100,
+              status: 'completed',
+            });
+
+            let runCount = 0;
+            for (const run of workflowRuns) {
+              if (run.id === context.runId || new Date(run.created_at) > runCutoff) {
+                continue;
+              }
+              runCount += 1;
+              core.info(`Deleting workflow run ${run.name} #${run.run_number} (${run.id})`);
+              await github.rest.actions.deleteWorkflowRun({ owner, repo, run_id: run.id });
+            }
+
+            let cacheCount = 0;
+            let cacheBytes = 0;
+            for (let page = 1; ; page += 1) {
+              const { data } = await github.rest.actions.getActionsCacheList({
+                owner,
+                repo,
+                per_page: 100,
+                page,
+              });
+              for (const cache of data.actions_caches || []) {
+                const lastAccessed = new Date(cache.last_accessed_at || cache.created_at);
+                if (lastAccessed > cacheCutoff) {
+                  continue;
+                }
+                cacheCount += 1;
+                cacheBytes += cache.size_in_bytes || 0;
+                core.info(`Deleting cache ${cache.key} (${cache.id})`);
+                await github.rest.actions.deleteActionsCacheById({ owner, repo, cache_id: cache.id });
+              }
+              if ((data.actions_caches || []).length < 100) {
+                break;
+              }
+            }
+
+            core.summary
+              .addHeading('Actions storage cleanup')
+              .addRaw(`Deleted artifacts: ${artifactCount} (${(artifactBytes / 1024 / 1024).toFixed(1)} MiB)\n\n`)
+              .addRaw(`Deleted workflow runs: ${runCount}\n\n`)
+              .addRaw(`Deleted caches: ${cacheCount} (${(cacheBytes / 1024 / 1024).toFixed(1)} MiB)\n\n`)
+              .write();
