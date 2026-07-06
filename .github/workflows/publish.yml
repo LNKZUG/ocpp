@@ -40,6 +40,7 @@ jobs:
         with:
           name: ocpp
           path: ${{ github.workspace }}/custom_components/ocpp
+          retention-days: 1
 
       - name: ZIP dir
         if: ${{ github.event_name == 'release' || startsWith(github.ref, 'refs/tags/') }}
