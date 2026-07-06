@@ -1602,6 +1602,13 @@ class ChargePoint(cp):
                 self._metrics[csess.session_energy.value].extra_attr[
                     cstat.id_tag.name
                 ] = self._metrics[cstat.id_tag.value].value
+            if self.central.user_registry is not None:
+                session_energy = self._metrics[csess.session_energy.value].value
+                self.central.user_registry.record_session_energy(
+                    transaction_id,
+                    self.central.cpid,
+                    float(session_energy) if session_energy is not None else None,
+                )
         self.hass.async_create_task(self.central.update(self.central.cpid))
         return call_result.MeterValues()
 

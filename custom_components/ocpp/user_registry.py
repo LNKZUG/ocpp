@@ -252,9 +252,48 @@ class OcppUserRegistry:
             "id_tag": self.normalize_id_tag(id_tag),
             "cp_id": cp_id,
             "meter_start_kwh": meter_start_kwh,
+            "credited_energy_kwh": 0.0,
             "started_at": time.time(),
         }
         self.schedule_save()
+
+    @callback
+    def record_session_energy(
+        self,
+        transaction_id: int,
+        cp_id: str,
+        session_energy_kwh: float | None,
+    ) -> float:
+        """Add the newly measured session energy delta to the user total."""
+        if session_energy_kwh is None or session_energy_kwh < 0:
+            return 0.0
+
+        session = self.sessions.get(self.session_key(cp_id, transaction_id))
+        if session is None:
+            return 0.0
+
+        user = self.users.get(session["user_id"])
+        if user is None:
+            return 0.0
+
+        credited_energy = float(session.get("credited_energy_kwh", 0.0))
+        delta_energy = round(float(session_energy_kwh) - credited_energy, 6)
+        if delta_energy <= 0:
+            return 0.0
+
+        self.ensure_current_month(user)
+        user["energy_kwh"] = round(
+            float(user.get("energy_kwh", 0.0)) + delta_energy,
+            6,
+        )
+        user["monthly_energy_kwh"] = round(
+            float(user.get("monthly_energy_kwh", 0.0)) + delta_energy,
+            6,
+        )
+        session["credited_energy_kwh"] = round(credited_energy + delta_energy, 6)
+        self.schedule_save()
+        self.notify_updated()
+        return delta_energy
 
     @callback
     def record_stop_transaction(
@@ -284,14 +323,17 @@ class OcppUserRegistry:
             return
 
         self.ensure_current_month(user)
-        user["energy_kwh"] = round(
-            float(user.get("energy_kwh", 0.0)) + float(session_energy_kwh),
-            6,
-        )
-        user["monthly_energy_kwh"] = round(
-            float(user.get("monthly_energy_kwh", 0.0)) + float(session_energy_kwh),
-            6,
-        )
+        credited_energy = float(session.get("credited_energy_kwh", 0.0))
+        delta_energy = round(float(session_energy_kwh) - credited_energy, 6)
+        if delta_energy > 0:
+            user["energy_kwh"] = round(
+                float(user.get("energy_kwh", 0.0)) + delta_energy,
+                6,
+            )
+            user["monthly_energy_kwh"] = round(
+                float(user.get("monthly_energy_kwh", 0.0)) + delta_energy,
+                6,
+            )
         user["last_session_energy_kwh"] = round(float(session_energy_kwh), 6)
         user["last_session_finished_at"] = time.time()
         self.schedule_save()

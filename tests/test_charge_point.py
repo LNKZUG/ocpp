@@ -56,6 +56,7 @@ from ocpp.v16.enums import (
     ResetStatus,
     ResetType,
     TriggerMessageStatus,
+    UnitOfMeasure,
     UnlockStatus,
     Measurand,
 )
@@ -320,6 +321,69 @@ def test_current_user_metric_maps_id_tag_to_managed_user():
         "reset_cycle"
     ] == "monthly"
     assert charge_point.central.user_registry.stop_recorded is True
+
+
+def test_meter_values_add_live_user_session_energy():
+    """Test MeterValues add live session energy to the managed user registry."""
+
+    class UserRegistryStub:
+        """Minimal user registry test double."""
+
+        def __init__(self):
+            self.recorded_session_energy = None
+
+        def record_session_energy(self, *args):
+            """Record live session energy calls."""
+            self.recorded_session_energy = args
+
+    class HassStub:
+        """Minimal Home Assistant test double."""
+
+        def async_create_task(self, task):
+            """Close scheduled coroutine from central.update."""
+            task.close()
+
+    async def update(_cpid):
+        return None
+
+    charge_point = object.__new__(OcppChargePoint)
+    charge_point.id = "charger"
+    charge_point.hass = HassStub()
+    charge_point.central = SimpleNamespace(
+        cpid="charger",
+        user_registry=UserRegistryStub(),
+        update=update,
+    )
+    charge_point.active_transaction_id = 123
+    charge_point._charger_reports_session_energy = False
+    charge_point._metrics = defaultdict(lambda: Metric(None, None))
+    charge_point._metrics[csess.transaction_id.value].value = 123
+    charge_point._metrics[csess.meter_start.value].value = 10.0
+    charge_point._metrics[csess.current_user.value].value = "Lukas"
+    charge_point._metrics[cstat.id_tag.value].value = "ABC"
+
+    charge_point.on_meter_values(
+        connector_id=1,
+        transaction_id=123,
+        meter_value=[
+            {
+                "sampledValue": [
+                    {
+                        "value": "11500",
+                        "measurand": Measurand.energy_active_import_register.value,
+                        "unit": UnitOfMeasure.wh.value,
+                    }
+                ]
+            }
+        ],
+    )
+
+    assert charge_point._metrics[csess.session_energy.value].value == 1.5
+    assert charge_point.central.user_registry.recorded_session_energy == (
+        123,
+        "charger",
+        1.5,
+    )
 
 
 def test_remote_start_for_user_uses_managed_user_id_tag():

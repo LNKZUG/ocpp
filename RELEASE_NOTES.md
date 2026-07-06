@@ -1,5 +1,15 @@
 # Release Notes
 
+## v0.5.19 - Live user energy counters
+
+Keeps managed-user energy counters moving while a charging transaction is still active.
+
+### Changed
+
+* Adds live delta booking for managed-user total and monthly energy counters during `MeterValues`.
+* Stores the already credited session energy so repeated meter updates and Home Assistant restarts do not double-count existing values.
+* Keeps `StopTransaction` compatible by only adding any remaining uncredited session energy and still recording the final session summary.
+
 ## v0.5.18 - Stale preparing recovery
 
 Recovers wallboxes that get stuck in `Preparing` or `SuspendedEV` without ever starting a transaction.
