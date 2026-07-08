@@ -173,6 +173,18 @@ class OcppUserRegistry:
             return None
         return self.sessions.get(self.session_key(cp_id, int(transaction_id)))
 
+    @callback
+    def get_latest_session(self, cp_id: str) -> dict[str, Any] | None:
+        """Return the latest active charging session for a charge point."""
+        sessions = [
+            session
+            for session in self.sessions.values()
+            if session.get("cp_id") == cp_id
+        ]
+        if not sessions:
+            return None
+        return max(sessions, key=lambda session: float(session.get("started_at", 0)))
+
     async def async_add_user(
         self, name: str, id_tags: str | list[str], active: bool = True
     ) -> str:

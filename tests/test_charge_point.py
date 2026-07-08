@@ -783,6 +783,108 @@ def test_remote_start_for_selected_user_uses_managed_user_id_tag():
     assert charge_point.started_id_tag == "ABC"
 
 
+def test_charge_state_loads_persistent_controls():
+    """Test charger control state is loaded from storage."""
+
+    class StoreStub:
+        """Minimal Home Assistant storage test double."""
+
+        async def async_load(self):
+            """Return persisted charger control state."""
+            return {
+                "selected_user_ids": {"charger": "lukas"},
+                "charge_modes": {
+                    "charger": PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED,
+                    "ignored": "Unknown",
+                },
+                "price_optimized_charging_allowed": {"charger": False},
+            }
+
+    central_system = object.__new__(CentralSystem)
+    central_system._charge_state_store = StoreStub()
+
+    asyncio.run(central_system.async_load_charge_state())
+
+    assert central_system.selected_user_ids == {"charger": "lukas"}
+    assert central_system.charge_modes == {
+        "charger": PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED
+    }
+    assert central_system.price_optimized_charging_allowed == {"charger": False}
+
+
+def test_charge_state_save_persists_controls():
+    """Test charger control state is saved to storage."""
+
+    class StoreStub:
+        """Minimal Home Assistant storage test double."""
+
+        def __init__(self):
+            self.saved = None
+
+        async def async_save(self, data):
+            """Record persisted charger control state."""
+            self.saved = data
+
+    store = StoreStub()
+    central_system = object.__new__(CentralSystem)
+    central_system._charge_state_store = store
+    central_system.selected_user_ids = {"charger": "lukas"}
+    central_system.charge_modes = {"charger": PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED}
+    central_system.price_optimized_charging_allowed = {"charger": False}
+
+    asyncio.run(central_system.async_save_charge_state())
+
+    assert store.saved == {
+        "selected_user_ids": {"charger": "lukas"},
+        "charge_modes": {"charger": PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED},
+        "price_optimized_charging_allowed": {"charger": False},
+    }
+
+
+def test_charge_state_changes_schedule_persistence():
+    """Test charger control changes schedule persistent storage updates."""
+
+    class UserRegistryStub:
+        """Minimal user registry test double."""
+
+        def get_user(self, user_id):
+            """Return a managed user."""
+            if user_id == "lukas":
+                return {
+                    "user_id": "lukas",
+                    "name": "Lukas",
+                    "id_tags": ["ABC"],
+                    "active": True,
+                }
+            return None
+
+    saves = []
+    central_system = object.__new__(CentralSystem)
+    central_system.user_registry = UserRegistryStub()
+    central_system.selected_user_ids = {}
+    central_system.charge_modes = {}
+    central_system.price_optimized_charging_allowed = {}
+    central_system.charge_points = {}
+    central_system.schedule_charge_state_save = lambda: saves.append(True)
+
+    assert central_system.set_selected_user("charger", "lukas")
+    assert asyncio.run(
+        central_system.set_charge_mode(
+            "charger", PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED
+        )
+    )
+    assert asyncio.run(
+        central_system.set_price_optimized_charging_allowed("charger", False)
+    )
+
+    assert central_system.selected_user_ids == {"charger": "lukas"}
+    assert central_system.charge_modes == {
+        "charger": PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED
+    }
+    assert central_system.price_optimized_charging_allowed == {"charger": False}
+    assert len(saves) == 3
+
+
 async def test_price_optimized_mode_pauses_and_resumes_only_when_enabled():
     """Test the price optimized switch only controls charging in optimized mode."""
 
@@ -1176,6 +1278,58 @@ def test_current_user_restores_from_persisted_session():
         "id_tag": "ABC",
         "user_id": "lukas",
     }
+
+
+def test_active_session_restores_from_latest_persisted_session():
+    """Test active transaction metadata is restored from the latest session."""
+
+    class UserRegistryStub:
+        """Minimal user registry test double."""
+
+        def get_latest_session(self, cp_id):
+            """Return the latest active session for the charger."""
+            if cp_id == "charger":
+                return {
+                    "transaction_id": 123,
+                    "user_id": "lukas",
+                    "id_tag": "ABC",
+                    "cp_id": "charger",
+                    "meter_start_kwh": 10.0,
+                }
+            return None
+
+        def get_session(self, cp_id, transaction_id):
+            """Return an active session for the transaction."""
+            if cp_id == "charger" and transaction_id == 123:
+                return {
+                    "transaction_id": 123,
+                    "user_id": "lukas",
+                    "id_tag": "ABC",
+                    "cp_id": "charger",
+                    "meter_start_kwh": 10.0,
+                }
+            return None
+
+        def get_user(self, user_id):
+            """Return the managed user."""
+            if user_id == "lukas":
+                return {"user_id": "lukas", "name": "Lukas"}
+            return None
+
+    charge_point = object.__new__(OcppChargePoint)
+    charge_point.central = SimpleNamespace(
+        cpid="charger",
+        user_registry=UserRegistryStub(),
+    )
+    charge_point._metrics = defaultdict(lambda: Metric(None, None))
+
+    charge_point.restore_latest_active_session_from_registry()
+
+    assert charge_point.active_transaction_id == 123
+    assert charge_point._metrics[csess.transaction_id.value].value == 123
+    assert charge_point._metrics[csess.meter_start.value].value == 10.0
+    assert charge_point._metrics[cstat.id_tag.value].value == "ABC"
+    assert charge_point._metrics[csess.current_user.value].value == "Lukas"
 
 
 @pytest.mark.timeout(90)  # Set timeout for this test

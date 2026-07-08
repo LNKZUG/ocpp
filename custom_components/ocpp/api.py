@@ -13,8 +13,9 @@ import time
 from homeassistant.components.persistent_notification import DOMAIN as PN_DOMAIN
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_OK, STATE_UNAVAILABLE, STATE_UNKNOWN, UnitOfTime
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry, entity_component, entity_registry
+from homeassistant.helpers.storage import Store
 import homeassistant.helpers.config_validation as cv
 from homeassistant.util import dt as dt_util
 import voluptuous as vol
@@ -128,6 +129,8 @@ PRICE_OPTIMIZED_CHARGE_MODES = [
 ]
 PRICE_PAUSE_PROFILE_ID = 80
 PRICE_OPTIMIZED_CHARGE_STATUS = "PriceOptimizedChargingPaused"
+STORAGE_VERSION = 1
+STORAGE_CHARGE_STATE = f"{DOMAIN}_charge_state"
 
 TIME_MINUTES = UnitOfTime.MINUTES
 
@@ -219,6 +222,7 @@ class CentralSystem:
         self.config = entry.data
         self.id = entry.entry_id
         self.user_registry = hass.data[DOMAIN].get(USER_REGISTRY)
+        self._charge_state_store = Store(hass, STORAGE_VERSION, STORAGE_CHARGE_STATE)
         self.selected_user_ids = {}
         self.charge_modes = {}
         self.price_optimized_charging_allowed = {}
@@ -242,6 +246,7 @@ class CentralSystem:
     async def create(hass: HomeAssistant, entry: ConfigEntry):
         """Create instance and start listening for OCPP connections on given port."""
         self = CentralSystem(hass, entry)
+        await self.async_load_charge_state()
 
         server = await websockets.server.serve(
             self.on_connect,
@@ -255,6 +260,42 @@ class CentralSystem:
         )
         self._server = server
         return self
+
+    async def async_load_charge_state(self) -> None:
+        """Load persisted charger control state."""
+        data = await self._charge_state_store.async_load()
+        if data is None:
+            data = {}
+        self.selected_user_ids = dict(data.get("selected_user_ids", {}))
+        self.charge_modes = {
+            cp_id: mode
+            for cp_id, mode in data.get("charge_modes", {}).items()
+            if mode in PRICE_OPTIMIZED_CHARGE_MODES
+        }
+        self.price_optimized_charging_allowed = {
+            cp_id: bool(allowed)
+            for cp_id, allowed in data.get(
+                "price_optimized_charging_allowed", {}
+            ).items()
+        }
+
+    async def async_save_charge_state(self) -> None:
+        """Persist charger control state."""
+        await self._charge_state_store.async_save(
+            {
+                "selected_user_ids": self.selected_user_ids,
+                "charge_modes": self.charge_modes,
+                "price_optimized_charging_allowed": (
+                    self.price_optimized_charging_allowed
+                ),
+            }
+        )
+
+    @callback
+    def schedule_charge_state_save(self) -> None:
+        """Schedule persistence of charger control state."""
+        if hasattr(self, "hass"):
+            self.hass.async_create_task(self.async_save_charge_state())
 
     async def on_connect(
         self, websocket: websockets.server.WebSocketServerProtocol, path: str
@@ -369,6 +410,7 @@ class CentralSystem:
         """Store the selected OCPP user for a charge point."""
         if user_id is None:
             self.selected_user_ids.pop(cp_id, None)
+            self.schedule_charge_state_save()
             return True
         if self.user_registry is None:
             return False
@@ -380,6 +422,7 @@ class CentralSystem:
         ):
             return False
         self.selected_user_ids[cp_id] = user_id
+        self.schedule_charge_state_save()
         return True
 
     def get_selected_user(self, cp_id: str):
@@ -396,6 +439,7 @@ class CentralSystem:
             or not user.get("id_tags", [])
         ):
             self.selected_user_ids.pop(cp_id, None)
+            self.schedule_charge_state_save()
             return None
         return user
 
@@ -440,6 +484,7 @@ class CentralSystem:
 
         if cp_id not in self.charge_points:
             self.charge_modes[cp_id] = mode
+            self.schedule_charge_state_save()
             return True
 
         if mode == PRICE_OPTIMIZED_CHARGE_MODE_STANDARD:
@@ -448,13 +493,16 @@ class CentralSystem:
             ].resume_price_optimized_charging():
                 return False
             self.charge_modes[cp_id] = mode
+            self.schedule_charge_state_save()
             return True
 
         self.charge_modes[cp_id] = mode
         if not self.get_price_optimized_charging_allowed(cp_id):
             if not await self.charge_points[cp_id].pause_price_optimized_charging():
                 self.charge_modes[cp_id] = PRICE_OPTIMIZED_CHARGE_MODE_STANDARD
+                self.schedule_charge_state_save()
                 return False
+        self.schedule_charge_state_save()
         return True
 
     def get_price_optimized_charging_allowed(self, cp_id: str) -> bool:
@@ -467,9 +515,11 @@ class CentralSystem:
         """Store and apply price-optimized charging pause state."""
         if cp_id not in self.charge_points:
             self.price_optimized_charging_allowed[cp_id] = allowed
+            self.schedule_charge_state_save()
             return True
         if self.get_charge_mode(cp_id) != PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED:
             self.price_optimized_charging_allowed[cp_id] = allowed
+            self.schedule_charge_state_save()
             return True
         if allowed:
             if not await self.charge_points[
@@ -477,10 +527,12 @@ class CentralSystem:
             ].resume_price_optimized_charging():
                 return False
             self.price_optimized_charging_allowed[cp_id] = allowed
+            self.schedule_charge_state_save()
             return True
         if not await self.charge_points[cp_id].pause_price_optimized_charging():
             return False
         self.price_optimized_charging_allowed[cp_id] = allowed
+        self.schedule_charge_state_save()
         return True
 
     def is_price_optimized_charging_paused(self, cp_id: str) -> bool:
@@ -589,6 +641,7 @@ class ChargePoint(cp):
         self._metrics[csess.meter_start.value].unit = UnitOfMeasure.kwh.value
         self._attr_supported_features = prof.NONE
         self._metrics[cstat.reconnects.value].value: int = 0
+        self.restore_latest_active_session_from_registry()
 
     async def post_connect(self):
         """Logic to be executed right after a charger connects."""
@@ -2082,6 +2135,28 @@ class ChargePoint(cp):
             "id_tag": id_tag,
             "user_id": user["user_id"],
         }
+
+    def restore_latest_active_session_from_registry(self) -> None:
+        """Restore active transaction metadata from the latest persisted session."""
+        if self.central.user_registry is None:
+            return
+        get_latest_session = getattr(
+            self.central.user_registry, "get_latest_session", None
+        )
+        if get_latest_session is None:
+            return
+        session = get_latest_session(self.central.cpid)
+        if session is None:
+            return
+
+        transaction_id = int(session["transaction_id"])
+        self.active_transaction_id = transaction_id
+        self._metrics[csess.transaction_id.value].value = transaction_id
+        if session.get("meter_start_kwh") is not None:
+            self._metrics[csess.meter_start.value].value = float(
+                session["meter_start_kwh"]
+            )
+        self.restore_current_user_from_session(transaction_id)
 
     @on(Action.authorize)
     def on_authorize(self, id_tag, **kwargs):

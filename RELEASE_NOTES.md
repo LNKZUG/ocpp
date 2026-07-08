@@ -1,5 +1,16 @@
 # Release Notes
 
+## v0.5.24 - Persist charging controls
+
+Keeps wallbox charging controls and selected users stable across Home Assistant restarts and integration updates.
+
+### Fixed
+
+* Persists the selected `Lademodus` per wallbox, including `Strompreis optimiert`.
+* Persists the price optimized charging pause/allow switch state per wallbox.
+* Persists the selected managed start user per wallbox.
+* Restores active transaction metadata and the currently logged-in user from the persisted user session when a wallbox reconnects.
+
 ## v0.5.23 - Restore active sessions safely
 
 Fixes restart and cleanup handling for price optimized charging sessions.
