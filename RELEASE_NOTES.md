@@ -1,5 +1,15 @@
 # Release Notes
 
+## v0.5.22 - Preserve price mode session counters
+
+Keeps active charging session counters stable while switching price optimized charging controls.
+
+### Fixed
+
+* Preserves active session metrics such as `Id Tag`, `Current User`, `Transaction.Id`, meter start, session energy, and session time across price pause and resume profile changes.
+* Prevents `Energy.Session` from decreasing during the same active transaction if a wallbox reports lower meter values while pausing or resuming.
+* Keeps the price optimized pause switch state unchanged when the underlying OCPP pause or resume command fails.
+
 ## v0.5.21 - Price pause auto-stop guard
 
 Fixes price optimized pause handling so switching back to `Standard` can resume the active charging transaction.

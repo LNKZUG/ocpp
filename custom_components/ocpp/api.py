@@ -131,6 +131,15 @@ PRICE_OPTIMIZED_CHARGE_STATUS = "PriceOptimizedChargingPaused"
 
 TIME_MINUTES = UnitOfTime.MINUTES
 
+ACTIVE_SESSION_METRICS = (
+    cstat.id_tag.value,
+    csess.current_user.value,
+    csess.transaction_id.value,
+    csess.meter_start.value,
+    csess.session_energy.value,
+    csess.session_time.value,
+)
+
 
 def truncate_status_notification_info(action, payload: dict, max_length: int = 50):
     """Trim too-long StatusNotification info fields for non-compliant chargers."""
@@ -456,14 +465,23 @@ class CentralSystem:
         self, cp_id: str, allowed: bool
     ) -> bool:
         """Store and apply price-optimized charging pause state."""
-        self.price_optimized_charging_allowed[cp_id] = allowed
         if cp_id not in self.charge_points:
+            self.price_optimized_charging_allowed[cp_id] = allowed
             return True
         if self.get_charge_mode(cp_id) != PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED:
+            self.price_optimized_charging_allowed[cp_id] = allowed
             return True
         if allowed:
-            return await self.charge_points[cp_id].resume_price_optimized_charging()
-        return await self.charge_points[cp_id].pause_price_optimized_charging()
+            if not await self.charge_points[
+                cp_id
+            ].resume_price_optimized_charging():
+                return False
+            self.price_optimized_charging_allowed[cp_id] = allowed
+            return True
+        if not await self.charge_points[cp_id].pause_price_optimized_charging():
+            return False
+        self.price_optimized_charging_allowed[cp_id] = allowed
+        return True
 
     def is_price_optimized_charging_paused(self, cp_id: str) -> bool:
         """Return whether charging is currently paused by price optimization."""
@@ -938,10 +956,71 @@ class ChargePoint(cp):
                 )
                 return False
 
+    def _active_session_snapshot(self) -> dict | None:
+        """Return current active session metrics for short OCPP control changes."""
+        transaction_id = self.active_transaction_id
+        if transaction_id == 0:
+            return None
+
+        return {
+            "transaction_id": transaction_id,
+            "charger_reports_session_energy": self._charger_reports_session_energy,
+            "metrics": {
+                metric: {
+                    "value": self._metrics[metric].value,
+                    "unit": self._metrics[metric].unit,
+                    "extra_attr": dict(self._metrics[metric].extra_attr),
+                }
+                for metric in ACTIVE_SESSION_METRICS
+            },
+        }
+
+    def _restore_active_session_snapshot(self, snapshot: dict | None) -> None:
+        """Restore active session metrics if a control change cleared them."""
+        if snapshot is None:
+            return
+        if self.active_transaction_id != snapshot["transaction_id"]:
+            return
+        if self.active_transaction_id == 0:
+            return
+
+        self._charger_reports_session_energy = snapshot[
+            "charger_reports_session_energy"
+        ]
+        for metric, values in snapshot["metrics"].items():
+            if self._metrics[metric].value is not None:
+                continue
+            if values["value"] is None:
+                continue
+            self._metrics[metric].value = values["value"]
+            self._metrics[metric].unit = values["unit"]
+            self._metrics[metric].extra_attr = dict(values["extra_attr"])
+
+    def _set_session_energy(
+        self, session_energy: float, unit: str | None = None
+    ) -> None:
+        """Set session energy without decreasing it during an active transaction."""
+        metric = self._metrics[csess.session_energy.value]
+        if metric.value is not None and float(session_energy) < float(metric.value):
+            _LOGGER.debug(
+                "%s ignores decreasing session energy %.6f -> %.6f for transaction %s",
+                self.id,
+                float(metric.value),
+                float(session_energy),
+                self.active_transaction_id,
+            )
+            return
+
+        metric.value = float(session_energy)
+        if unit is not None:
+            metric.unit = unit
+        metric.extra_attr[cstat.id_tag.name] = self._metrics[cstat.id_tag.value].value
+
     async def pause_price_optimized_charging(self):
         """Pause charging without ending the active transaction."""
         if self.active_transaction_id == 0:
             return True
+        snapshot = self._active_session_snapshot()
         _LOGGER.info(
             "%s pauses charging for price-optimized mode without stopping transaction %s",
             self.id,
@@ -952,6 +1031,7 @@ class ChargePoint(cp):
             limit_watts=0,
             profile_id=PRICE_PAUSE_PROFILE_ID,
         )
+        self._restore_active_session_snapshot(snapshot)
         if applied:
             self._cancel_auto_stop()
             self._price_pause_profile_applied = True
@@ -963,8 +1043,10 @@ class ChargePoint(cp):
         """Resume charging by clearing the price-optimization pause profile."""
         if not getattr(self, "_price_pause_profile_applied", False):
             return True
+        snapshot = self._active_session_snapshot()
         _LOGGER.info("%s resumes charging for price-optimized mode", self.id)
         cleared = await self.clear_profile(profile_id=PRICE_PAUSE_PROFILE_ID)
+        self._restore_active_session_snapshot(snapshot)
         if cleared:
             self._price_pause_profile_applied = False
             if hasattr(self, "central") and hasattr(self, "hass"):
@@ -1651,13 +1733,7 @@ class ChargePoint(cp):
                             if unit == DEFAULT_ENERGY_UNIT:
                                 value = float(value) / 1000
                                 unit = HA_ENERGY_UNIT
-                            self._metrics[csess.session_energy.value].value = float(
-                                value
-                            )
-                            self._metrics[csess.session_energy.value].unit = unit
-                            self._metrics[csess.session_energy.value].extra_attr[
-                                cstat.id_tag.name
-                            ] = self._metrics[cstat.id_tag.value].value
+                            self._set_session_energy(float(value), unit)
                         else:
                             if unit == DEFAULT_ENERGY_UNIT:
                                 value = float(value) / 1000
@@ -1710,12 +1786,10 @@ class ChargePoint(cp):
                 self._metrics[csess.meter_start.value].value is not None
                 and not self._charger_reports_session_energy
             ):
-                self._metrics[csess.session_energy.value].value = float(
-                    self._metrics[DEFAULT_MEASURAND].value or 0
-                ) - float(self._metrics[csess.meter_start.value].value)
-                self._metrics[csess.session_energy.value].extra_attr[
-                    cstat.id_tag.name
-                ] = self._metrics[cstat.id_tag.value].value
+                self._set_session_energy(
+                    float(self._metrics[DEFAULT_MEASURAND].value or 0)
+                    - float(self._metrics[csess.meter_start.value].value)
+                )
             if self.central.user_registry is not None:
                 session_energy = self._metrics[csess.session_energy.value].value
                 self.central.user_registry.record_session_energy(
