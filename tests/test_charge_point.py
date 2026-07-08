@@ -383,6 +383,8 @@ def test_current_user_metric_maps_id_tag_to_managed_user():
         "user_id": "lukas",
     }
     assert charge_point._metrics[cstat.id_tag.value].value == "ABC"
+    charge_point._metrics[csess.session_time.value].value = 12
+    charge_point._price_pause_profile_applied = True
 
     charge_point.on_stop_transaction(
         meter_stop=2000,
@@ -393,6 +395,11 @@ def test_current_user_metric_maps_id_tag_to_managed_user():
     assert charge_point._metrics[cstat.id_tag.value].value is None
     assert charge_point._metrics[csess.current_user.value].value is None
     assert charge_point._metrics[csess.current_user.value].extra_attr == {}
+    assert charge_point._metrics[csess.transaction_id.value].value is None
+    assert charge_point._metrics[csess.meter_start.value].value is None
+    assert charge_point._metrics[csess.session_energy.value].value is None
+    assert charge_point._metrics[csess.session_time.value].value is None
+    assert charge_point._price_pause_profile_applied is False
     assert charge_point._metrics[csess.monthly_energy.value].value == 1.0
     assert charge_point._metrics[csess.monthly_energy.value].extra_attr[
         "reset_cycle"
@@ -515,6 +522,184 @@ def test_meter_values_do_not_decrease_active_session_energy():
     )
 
     assert charge_point._metrics[csess.session_energy.value].value == 1.5
+
+
+def test_meter_values_restore_active_session_after_restart_from_registry():
+    """Test restart restore keeps the original session start and user."""
+
+    class UserRegistryStub:
+        """Minimal user registry test double."""
+
+        def __init__(self):
+            self.recorded_session_energy = None
+
+        def get_session(self, cp_id, transaction_id):
+            """Return the active persisted session."""
+            if cp_id == "charger" and int(transaction_id) == 123:
+                return {
+                    "transaction_id": 123,
+                    "cp_id": "charger",
+                    "user_id": "lukas",
+                    "id_tag": "ABC",
+                    "meter_start_kwh": 10.0,
+                }
+            return None
+
+        def get_user(self, user_id):
+            """Return the managed user."""
+            if user_id == "lukas":
+                return {"user_id": "lukas", "name": "Lukas"}
+            return None
+
+        def record_session_energy(self, *args):
+            """Record live session energy calls."""
+            self.recorded_session_energy = args
+
+    class HassStub:
+        """Minimal Home Assistant test double."""
+
+        states = SimpleNamespace(get=lambda _entity_id: None)
+
+        def async_create_task(self, task):
+            """Close scheduled coroutine from central.update."""
+            task.close()
+
+    async def update(_cpid):
+        return None
+
+    charge_point = object.__new__(OcppChargePoint)
+    charge_point.id = "charger"
+    charge_point.hass = HassStub()
+    charge_point.central = SimpleNamespace(
+        cpid="charger",
+        user_registry=UserRegistryStub(),
+        update=update,
+    )
+    charge_point.active_transaction_id = 0
+    charge_point._charger_reports_session_energy = False
+    charge_point._price_pause_profile_applied = False
+    charge_point.auto_stop_on_evse_suspended = False
+    charge_point._auto_stop_task = None
+    charge_point._metrics = defaultdict(lambda: Metric(None, None))
+
+    charge_point.on_meter_values(
+        connector_id=1,
+        transaction_id=123,
+        meter_value=[
+            {
+                "sampledValue": [
+                    {
+                        "value": "230",
+                        "measurand": Measurand.voltage.value,
+                        "unit": UnitOfMeasure.v.value,
+                    }
+                ]
+            }
+        ],
+    )
+
+    assert charge_point.active_transaction_id == 123
+    assert charge_point._metrics[csess.transaction_id.value].value == 123
+    assert charge_point._metrics[csess.meter_start.value].value == 10.0
+    assert charge_point._metrics[cstat.id_tag.value].value == "ABC"
+    assert charge_point._metrics[csess.current_user.value].value == "Lukas"
+    assert charge_point._metrics[csess.current_user.value].extra_attr == {
+        "id_tag": "ABC",
+        "user_id": "lukas",
+    }
+
+    charge_point.on_meter_values(
+        connector_id=1,
+        transaction_id=123,
+        meter_value=[
+            {
+                "sampledValue": [
+                    {
+                        "value": "11500",
+                        "measurand": Measurand.energy_active_import_register.value,
+                        "unit": UnitOfMeasure.wh.value,
+                    }
+                ]
+            }
+        ],
+    )
+
+    assert charge_point._metrics[csess.session_energy.value].value == 1.5
+    assert charge_point.central.user_registry.recorded_session_energy == (
+        123,
+        "charger",
+        1.5,
+    )
+
+
+def test_meter_values_do_not_create_meter_start_from_current_register():
+    """Test missing restore state does not reset session start to current meter."""
+
+    class UserRegistryStub:
+        """Minimal user registry test double."""
+
+        def __init__(self):
+            self.recorded_session_energy = None
+
+        def get_session(self, cp_id, transaction_id):
+            """Return no persisted session."""
+            return None
+
+        def record_session_energy(self, *args):
+            """Record live session energy calls."""
+            self.recorded_session_energy = args
+
+    class HassStub:
+        """Minimal Home Assistant test double."""
+
+        states = SimpleNamespace(get=lambda _entity_id: None)
+
+        def async_create_task(self, task):
+            """Close scheduled coroutine from central.update."""
+            task.close()
+
+    async def update(_cpid):
+        return None
+
+    charge_point = object.__new__(OcppChargePoint)
+    charge_point.id = "charger"
+    charge_point.hass = HassStub()
+    charge_point.central = SimpleNamespace(
+        cpid="charger",
+        user_registry=UserRegistryStub(),
+        update=update,
+    )
+    charge_point.active_transaction_id = 0
+    charge_point._charger_reports_session_energy = False
+    charge_point._price_pause_profile_applied = False
+    charge_point.auto_stop_on_evse_suspended = False
+    charge_point._auto_stop_task = None
+    charge_point._metrics = defaultdict(lambda: Metric(None, None))
+
+    charge_point.on_meter_values(
+        connector_id=1,
+        transaction_id=123,
+        meter_value=[
+            {
+                "sampledValue": [
+                    {
+                        "value": "11906910",
+                        "measurand": Measurand.energy_active_import_register.value,
+                        "unit": UnitOfMeasure.wh.value,
+                    }
+                ]
+            }
+        ],
+    )
+
+    assert charge_point.active_transaction_id == 123
+    assert charge_point._metrics[csess.meter_start.value].value is None
+    assert charge_point._metrics[csess.session_energy.value].value is None
+    assert charge_point.central.user_registry.recorded_session_energy == (
+        123,
+        "charger",
+        None,
+    )
 
 
 def test_remote_start_for_user_uses_managed_user_id_tag():
@@ -696,6 +881,27 @@ async def test_price_optimized_switch_state_changes_only_after_success():
         "charger", True
     ) is False
     assert central_system.get_price_optimized_charging_allowed("charger") is False
+
+
+def test_price_optimized_pause_status_requires_active_transaction():
+    """Test price pause status is not shown while the charger is idle."""
+
+    class ChargePointStub:
+        """Minimal charge point test double."""
+
+        active_transaction_id = 0
+        _price_pause_profile_applied = True
+
+    central_system = object.__new__(CentralSystem)
+    central_system.charge_modes = {"charger": PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED}
+    central_system.price_optimized_charging_allowed = {"charger": False}
+    central_system.charge_points = {"charger": ChargePointStub()}
+
+    assert central_system.is_price_optimized_charging_paused("charger") is False
+
+    central_system.charge_points["charger"].active_transaction_id = 123
+
+    assert central_system.is_price_optimized_charging_paused("charger") is True
 
 
 async def test_price_optimized_pause_profile_does_not_stop_transaction():

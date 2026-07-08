@@ -489,6 +489,7 @@ class CentralSystem:
             self.get_charge_mode(cp_id) != PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED
             or self.get_price_optimized_charging_allowed(cp_id)
             or cp_id not in self.charge_points
+            or not self.has_active_transaction(cp_id)
         ):
             return False
         return bool(
@@ -1015,6 +1016,76 @@ class ChargePoint(cp):
         if unit is not None:
             metric.unit = unit
         metric.extra_attr[cstat.id_tag.name] = self._metrics[cstat.id_tag.value].value
+
+    def _restore_active_transaction_id(self, transaction_id: int | None) -> None:
+        """Restore active transaction id from HA state or MeterValues."""
+        if self._metrics[csess.transaction_id.value].value is not None:
+            return
+
+        value = self.get_ha_metric(csess.transaction_id.value)
+        if value is None:
+            value = transaction_id
+        else:
+            value = int(value)
+            _LOGGER.debug(
+                "%s was None, restored value=%s from HA.",
+                csess.transaction_id.value,
+                value,
+            )
+
+        if value in (None, 0, "0"):
+            return
+        self._metrics[csess.transaction_id.value].value = value
+        self.active_transaction_id = int(value)
+
+    def _active_registry_session(self, transaction_id: int | str | None = None):
+        """Return the persisted active user session for this transaction."""
+        if self.central.user_registry is None:
+            return None
+        if transaction_id is None:
+            transaction_id = self.active_transaction_id
+        return self.central.user_registry.get_session(self.central.cpid, transaction_id)
+
+    def _restore_meter_start(self) -> None:
+        """Restore transaction meter start without using the current meter value."""
+        if self._metrics[csess.meter_start.value].value is not None:
+            return
+
+        session = self._active_registry_session()
+        if session is not None:
+            value = float(session["meter_start_kwh"])
+            self._metrics[csess.meter_start.value].value = value
+            _LOGGER.debug(
+                "%s was None, restored value=%s from user registry session.",
+                csess.meter_start.value,
+                value,
+            )
+            return
+
+        value = self.get_ha_metric(csess.meter_start.value)
+        if value is not None:
+            value = float(value)
+            self._metrics[csess.meter_start.value].value = value
+            _LOGGER.debug(
+                "%s was None, restored value=%s from HA.",
+                csess.meter_start.value,
+                value,
+            )
+
+    def _restore_current_session_user(self) -> None:
+        """Restore active session user metadata from registry or HA state."""
+        if self._metrics[csess.current_user.value].value is None:
+            self.restore_current_user_from_session(self.active_transaction_id)
+
+        if self._metrics[cstat.id_tag.value].value is None:
+            value = self.get_ha_metric(cstat.id_tag.value)
+            if value is not None:
+                self._metrics[cstat.id_tag.value].value = value
+
+        if self._metrics[csess.current_user.value].value is None:
+            value = self.get_ha_metric(csess.current_user.value)
+            if value is not None:
+                self._metrics[csess.current_user.value].value = value
 
     async def pause_price_optimized_charging(self):
         """Pause charging without ending the active transaction."""
@@ -1664,31 +1735,11 @@ class ChargePoint(cp):
         transaction_id: int = kwargs.get(om.transaction_id.name, 0)
         contexts = set()
 
-        # If missing meter_start or active_transaction_id try to restore from HA states. If HA
-        # does not have values either, generate new ones.
-        if self._metrics[csess.meter_start.value].value is None:
-            value = self.get_ha_metric(csess.meter_start.value)
-            if value is None:
-                value = self._metrics[DEFAULT_MEASURAND].value
-            else:
-                value = float(value)
-                _LOGGER.debug(
-                    f"{csess.meter_start.value} was None, restored value={value} from HA."
-                )
-            self._metrics[csess.meter_start.value].value = value
-        if self._metrics[csess.transaction_id.value].value is None:
-            value = self.get_ha_metric(csess.transaction_id.value)
-            if value is None:
-                value = kwargs.get(om.transaction_id.name)
-            else:
-                value = int(value)
-                _LOGGER.debug(
-                    f"{csess.transaction_id.value} was None, restored value={value} from HA."
-                )
-            self._metrics[csess.transaction_id.value].value = value
-            self.active_transaction_id = value
-        if self._metrics[csess.current_user.value].value is None:
-            self.restore_current_user_from_session(self.active_transaction_id)
+        # Restore transaction context before processing meter data. Never use the
+        # current meter value as meter_start for an already active transaction.
+        self._restore_active_transaction_id(transaction_id)
+        self._restore_meter_start()
+        self._restore_current_session_user()
 
         transaction_matches: bool = False
         # match is also false if no transaction is in progress ie active_transaction_id==transaction_id==0
@@ -2104,6 +2155,8 @@ class ChargePoint(cp):
         self.active_transaction_id = 0
         self._cancel_auto_stop()
         self._cancel_remote_start_cleanup()
+        self._price_pause_profile_applied = False
+        self._charger_reports_session_energy = False
         self._metrics[cstat.id_tag.value].value = None
         self._metrics[csess.current_user.value].value = None
         self._metrics[csess.current_user.value].extra_attr = {}
@@ -2138,6 +2191,13 @@ class ChargePoint(cp):
                 int(meter_stop) / 1000,
                 float(session_energy) if session_energy is not None else None,
             )
+        for metric in (
+            csess.transaction_id.value,
+            csess.meter_start.value,
+            csess.session_energy.value,
+            csess.session_time.value,
+        ):
+            self._metrics[metric].value = None
         self.hass.async_create_task(self.central.update(self.central.cpid))
         return call_result.StopTransaction(
             id_tag_info={om.status.value: AuthorizationStatus.accepted.value}

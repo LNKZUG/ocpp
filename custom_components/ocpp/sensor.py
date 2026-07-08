@@ -316,6 +316,10 @@ class ChargePointMetric(RestoreSensor, SensorEntity):
             return self._attr_native_value
         if self.metric in (
             HAChargerSession.current_user.value,
+            HAChargerSession.transaction_id.value,
+            HAChargerSession.meter_start.value,
+            HAChargerSession.session_energy.value,
+            HAChargerSession.session_time.value,
             HAChargerStatuses.id_tag.value,
         ) and value is None:
             self._attr_native_value = None

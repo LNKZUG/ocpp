@@ -163,6 +163,25 @@ def test_id_tag_sensor_can_clear_restored_value():
     assert entity._attr_native_value is None
 
 
+def test_session_sensor_can_clear_restored_value():
+    """Test active session sensors return None instead of stale restored state."""
+    entity = ChargePointMetric(
+        None,
+        CentralSystemStub({HAChargerSession.session_energy.value: None}),
+        "charger",
+        OcppSensorDescription(
+            key="session_energy",
+            name="Session Energy",
+            metric=HAChargerSession.session_energy.value,
+            translation_key="session_energy",
+        ),
+    )
+    entity._attr_native_value = 21.32
+
+    assert entity.native_value is None
+    assert entity._attr_native_value is None
+
+
 def test_status_sensor_reflects_price_optimized_pause():
     """Test charger status shows price optimization pauses."""
 

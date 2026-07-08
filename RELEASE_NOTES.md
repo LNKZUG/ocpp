@@ -1,5 +1,17 @@
 # Release Notes
 
+## v0.5.23 - Restore active sessions safely
+
+Fixes restart and cleanup handling for price optimized charging sessions.
+
+### Fixed
+
+* Restores active transaction context after Home Assistant restarts without using the current meter register as a new session start.
+* Restores the active managed user and idTag from the persisted user session when meter values recover an active transaction.
+* Keeps `Pausiert aufgrund strompreisoptimiertem Laden` limited to active transactions, so idle wallboxes can show `Bereit`.
+* Clears active session duration and session energy after a successful `StopTransaction` while still booking the completed session to monthly/user counters.
+* Allows active session sensors to clear restored numeric values instead of showing stale session data after the backend state is reset.
+
 ## v0.5.22 - Preserve price mode session counters
 
 Keeps active charging session counters stable while switching price optimized charging controls.
