@@ -137,6 +137,80 @@ async def test_evse_suspended_auto_stop_sends_remote_stop():
     assert triggered is True
 
 
+async def test_price_optimized_pause_skips_evse_suspended_auto_stop():
+    """Test price optimized pauses do not trigger the EVSE auto-stop."""
+
+    stopped = False
+
+    async def stop_transaction():
+        nonlocal stopped
+        stopped = True
+        return True
+
+    charge_point = object.__new__(OcppChargePoint)
+    charge_point.id = "test_cpid"
+    charge_point.hass = SimpleNamespace(async_create_task=asyncio.create_task)
+    charge_point._metrics = defaultdict(lambda: Metric(None, None))
+    charge_point._metrics[cstat.status_connector.value].value = (
+        ChargePointStatus.suspended_evse.value
+    )
+    charge_point._metrics[Measurand.power_active_import.value].value = 0
+    charge_point._metrics[Measurand.current_import.value].value = 0
+    charge_point.active_transaction_id = 123
+    charge_point.auto_stop_on_evse_suspended = True
+    charge_point.auto_stop_delay = 0
+    charge_point._auto_stop_task = None
+    charge_point._price_pause_profile_applied = True
+    charge_point.stop_transaction = stop_transaction
+
+    charge_point._schedule_auto_stop_on_evse_suspended("price pause")
+    await asyncio.sleep(0)
+
+    assert charge_point._auto_stop_task is None
+    assert stopped is False
+
+
+async def test_price_optimized_pause_cancels_pending_evse_auto_stop():
+    """Test an already scheduled EVSE auto-stop is skipped after price pause."""
+
+    stopped = False
+    triggered = False
+
+    async def stop_transaction():
+        nonlocal stopped
+        stopped = True
+        return True
+
+    async def trigger_status_notification():
+        nonlocal triggered
+        triggered = True
+        return True
+
+    charge_point = object.__new__(OcppChargePoint)
+    charge_point.id = "test_cpid"
+    charge_point._metrics = defaultdict(lambda: Metric(None, None))
+    charge_point._metrics[cstat.status_connector.value].value = (
+        ChargePointStatus.suspended_evse.value
+    )
+    charge_point._metrics[Measurand.power_active_import.value].value = 0
+    charge_point._metrics[Measurand.current_import.value].value = 0
+    charge_point.active_transaction_id = 123
+    charge_point.auto_stop_on_evse_suspended = True
+    charge_point._auto_stop_task = None
+    charge_point._price_pause_profile_applied = True
+    charge_point.stop_transaction = stop_transaction
+    charge_point.trigger_status_notification = trigger_status_notification
+
+    await charge_point._auto_stop_after_evse_suspended(
+        0,
+        charge_point.active_transaction_id,
+        "price pause",
+    )
+
+    assert stopped is False
+    assert triggered is False
+
+
 async def test_pending_remote_start_cleanup_unlocks_and_refreshes(monkeypatch):
     """Test a remote start that never becomes a transaction is cleaned up."""
 
@@ -513,6 +587,29 @@ async def test_price_optimized_mode_pauses_and_resumes_only_when_enabled():
         "charger", PRICE_OPTIMIZED_CHARGE_MODE_STANDARD
     )
     assert charge_point.resumed == 2
+
+
+async def test_price_optimized_mode_stays_paused_when_resume_fails():
+    """Test mode remains optimized if clearing the price pause fails."""
+
+    class ChargePointStub:
+        """Minimal charge point test double."""
+
+        async def resume_price_optimized_charging(self):
+            """Reject resume."""
+            return False
+
+    central_system = object.__new__(CentralSystem)
+    central_system.charge_modes = {"charger": PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED}
+    central_system.price_optimized_charging_allowed = {"charger": False}
+    central_system.charge_points = {"charger": ChargePointStub()}
+
+    assert await central_system.set_charge_mode(
+        "charger", PRICE_OPTIMIZED_CHARGE_MODE_STANDARD
+    ) is False
+    assert central_system.get_charge_mode("charger") == (
+        PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED
+    )
 
 
 async def test_price_optimized_pause_profile_does_not_stop_transaction():

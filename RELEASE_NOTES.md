@@ -1,5 +1,15 @@
 # Release Notes
 
+## v0.5.21 - Price pause auto-stop guard
+
+Fixes price optimized pause handling so switching back to `Standard` can resume the active charging transaction.
+
+### Fixed
+
+* Prevents the EVSE-suspend auto-stop logic from sending `RemoteStopTransaction` while charging is paused by price optimization.
+* Cancels a pending EVSE auto-stop as soon as the price pause profile is applied.
+* Keeps the charge mode in `Strompreis optimiert` if clearing the pause profile fails, so Home Assistant does not show `Standard` before charging has actually resumed.
+
 ## v0.5.20 - Price optimized charging
 
 Adds Home Assistant controls for price optimized charging sessions without ending the active OCPP transaction.

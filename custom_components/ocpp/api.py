@@ -429,15 +429,23 @@ class CentralSystem:
         if mode not in PRICE_OPTIMIZED_CHARGE_MODES:
             return False
 
-        self.charge_modes[cp_id] = mode
         if cp_id not in self.charge_points:
+            self.charge_modes[cp_id] = mode
             return True
 
         if mode == PRICE_OPTIMIZED_CHARGE_MODE_STANDARD:
-            return await self.charge_points[cp_id].resume_price_optimized_charging()
+            if not await self.charge_points[
+                cp_id
+            ].resume_price_optimized_charging():
+                return False
+            self.charge_modes[cp_id] = mode
+            return True
 
+        self.charge_modes[cp_id] = mode
         if not self.get_price_optimized_charging_allowed(cp_id):
-            return await self.charge_points[cp_id].pause_price_optimized_charging()
+            if not await self.charge_points[cp_id].pause_price_optimized_charging():
+                self.charge_modes[cp_id] = PRICE_OPTIMIZED_CHARGE_MODE_STANDARD
+                return False
         return True
 
     def get_price_optimized_charging_allowed(self, cp_id: str) -> bool:
@@ -945,6 +953,7 @@ class ChargePoint(cp):
             profile_id=PRICE_PAUSE_PROFILE_ID,
         )
         if applied:
+            self._cancel_auto_stop()
             self._price_pause_profile_applied = True
             if hasattr(self, "central") and hasattr(self, "hass"):
                 self.hass.async_create_task(self.central.update(self.central.cpid))
@@ -1025,7 +1034,8 @@ class ChargePoint(cp):
 
     def _cancel_auto_stop(self):
         """Cancel a pending EVSE-suspend auto-stop task."""
-        if self._auto_stop_task is not None and not self._auto_stop_task.done():
+        task = getattr(self, "_auto_stop_task", None)
+        if task is not None and not task.done():
             self._auto_stop_task.cancel()
         self._auto_stop_task = None
 
@@ -1057,6 +1067,12 @@ class ChargePoint(cp):
             return
         if self.active_transaction_id == 0:
             return
+        if getattr(self, "_price_pause_profile_applied", False):
+            _LOGGER.debug(
+                "%s skips EVSE auto-stop while price optimized charging is paused",
+                self.id,
+            )
+            return
         if self._auto_stop_task is not None and not self._auto_stop_task.done():
             return
 
@@ -1082,6 +1098,8 @@ class ChargePoint(cp):
             if not self.auto_stop_on_evse_suspended:
                 return
             if self.active_transaction_id != transaction_id:
+                return
+            if getattr(self, "_price_pause_profile_applied", False):
                 return
             if self._has_active_import():
                 return
