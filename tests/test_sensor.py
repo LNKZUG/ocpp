@@ -4,6 +4,7 @@ from datetime import datetime
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 
+from custom_components.ocpp.api import PRICE_OPTIMIZED_CHARGE_STATUS
 from custom_components.ocpp.const import DEFAULT_DISABLED_METRICS
 from custom_components.ocpp.enums import HAChargerSession, HAChargerStatuses
 from custom_components.ocpp.sensor import (
@@ -32,6 +33,10 @@ class CentralSystemStub:
     def get_metric(self, cp_id, metric):
         """Return a metric value."""
         return self.metrics.get(metric)
+
+    def is_price_optimized_charging_paused(self, cp_id):
+        """Return price-optimized pause state."""
+        return False
 
 
 class RegistryStub:
@@ -156,6 +161,32 @@ def test_id_tag_sensor_can_clear_restored_value():
 
     assert entity.native_value is None
     assert entity._attr_native_value is None
+
+
+def test_status_sensor_reflects_price_optimized_pause():
+    """Test charger status shows price optimization pauses."""
+
+    class PausedCentralSystemStub(CentralSystemStub):
+        """Central system test double with active price pause."""
+
+        def is_price_optimized_charging_paused(self, cp_id):
+            """Return price-optimized pause state."""
+            return True
+
+    entity = ChargePointMetric(
+        None,
+        PausedCentralSystemStub({HAChargerStatuses.status_connector.value: "Charging"}),
+        "charger",
+        OcppSensorDescription(
+            key="status_connector",
+            name="Status Connector",
+            metric=HAChargerStatuses.status_connector.value,
+            translation_key="status_connector",
+        ),
+    )
+
+    assert PRICE_OPTIMIZED_CHARGE_STATUS in entity.options
+    assert entity.native_value == PRICE_OPTIMIZED_CHARGE_STATUS
 
 
 def test_user_entities_expose_user_details():

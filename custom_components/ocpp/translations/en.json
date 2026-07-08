@@ -109,7 +109,8 @@
                     "SuspendedEVSE": "Suspended by charger",
                     "Preparing": "Preparing",
                     "Reserved": "Reserved",
-                    "Faulted": "Faulted"
+                    "Faulted": "Faulted",
+                    "PriceOptimizedChargingPaused": "Paused by price optimized charging"
                 }
             },
             "status_connector": {
@@ -123,7 +124,8 @@
                     "SuspendedEVSE": "Suspended by charger",
                     "Preparing": "Preparing",
                     "Reserved": "Reserved",
-                    "Faulted": "Faulted"
+                    "Faulted": "Faulted",
+                    "PriceOptimizedChargingPaused": "Paused by price optimized charging"
                 }
             },
             "status_firmware": {"name": "Status Firmware"},

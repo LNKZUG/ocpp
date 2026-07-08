@@ -19,7 +19,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.util import slugify
 
-from .api import CentralSystem
+from .api import CentralSystem, PRICE_OPTIMIZED_CHARGE_STATUS
 from .const import (
     CONF_CPID,
     DATA_UPDATED,
@@ -63,6 +63,7 @@ STATUS_TRANSLATION_OPTIONS = [
     "Preparing",
     "Reserved",
     "Faulted",
+    PRICE_OPTIMIZED_CHARGE_STATUS,
 ]
 
 
@@ -307,6 +308,12 @@ class ChargePointMetric(RestoreSensor, SensorEntity):
     def native_value(self):
         """Return the state of the sensor, rounding if a number."""
         value = self.central_system.get_metric(self.cp_id, self.metric)
+        if self.metric in (
+            HAChargerStatuses.status.value,
+            HAChargerStatuses.status_connector.value,
+        ) and self.central_system.is_price_optimized_charging_paused(self.cp_id):
+            self._attr_native_value = PRICE_OPTIMIZED_CHARGE_STATUS
+            return self._attr_native_value
         if self.metric in (
             HAChargerSession.current_user.value,
             HAChargerStatuses.id_tag.value,

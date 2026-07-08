@@ -61,6 +61,18 @@
         }
     },
     "entity": {
+        "sensor": {
+            "status": {
+                "state": {
+                    "PriceOptimizedChargingPaused": "Paused by price optimized charging"
+                }
+            },
+            "status_connector": {
+                "state": {
+                    "PriceOptimizedChargingPaused": "Paused by price optimized charging"
+                }
+            }
+        },
         "number": {
             "auto_stop_delay": {"name": "Auto Stop Delay"},
             "maximum_current": {"name": "Maximum Current"}

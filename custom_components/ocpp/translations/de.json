@@ -106,7 +106,8 @@
                     "SuspendedEVSE": "Ladevorgang durch Wallbox ausgesetzt",
                     "Preparing": "Ladevorgang wird vorbereitet",
                     "Reserved": "Reserviert",
-                    "Faulted": "Fehler"
+                    "Faulted": "Fehler",
+                    "PriceOptimizedChargingPaused": "Pausiert aufgrund strompreisoptimiertem Laden"
                 }
             },
             "status_connector": {
@@ -120,7 +121,8 @@
                     "SuspendedEVSE": "Ladevorgang durch Wallbox ausgesetzt",
                     "Preparing": "Ladevorgang wird vorbereitet",
                     "Reserved": "Reserviert",
-                    "Faulted": "Fehler"
+                    "Faulted": "Fehler",
+                    "PriceOptimizedChargingPaused": "Pausiert aufgrund strompreisoptimiertem Laden"
                 }
             },
             "status_firmware": {"name": "Firmwarestatus"},

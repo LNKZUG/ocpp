@@ -1,5 +1,20 @@
 # Release Notes
 
+## v0.5.20 - Price optimized charging
+
+Adds Home Assistant controls for price optimized charging sessions without ending the active OCPP transaction.
+
+### Added
+
+* Adds a `Charge mode` select with `Standard` and `Strompreis optimiert`.
+* Adds a price optimized charging switch for automations to allow or pause charging during an active transaction.
+* Pauses charging through a dedicated zero-limit charging profile and resumes by clearing only that pause profile.
+
+### Changed
+
+* Shows price optimized pauses in the charger status as `Pausiert aufgrund strompreisoptimiertem Laden` in German.
+* Applies a pending price pause immediately when a transaction starts in price optimized mode.
+
 ## v0.5.19 - Live user energy counters
 
 Keeps managed-user energy counters moving while a charging transaction is still active.

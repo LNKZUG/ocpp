@@ -127,6 +127,7 @@ PRICE_OPTIMIZED_CHARGE_MODES = [
     PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED,
 ]
 PRICE_PAUSE_PROFILE_ID = 80
+PRICE_OPTIMIZED_CHARGE_STATUS = "PriceOptimizedChargingPaused"
 
 TIME_MINUTES = UnitOfTime.MINUTES
 
@@ -455,6 +456,18 @@ class CentralSystem:
         if allowed:
             return await self.charge_points[cp_id].resume_price_optimized_charging()
         return await self.charge_points[cp_id].pause_price_optimized_charging()
+
+    def is_price_optimized_charging_paused(self, cp_id: str) -> bool:
+        """Return whether charging is currently paused by price optimization."""
+        if (
+            self.get_charge_mode(cp_id) != PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED
+            or self.get_price_optimized_charging_allowed(cp_id)
+            or cp_id not in self.charge_points
+        ):
+            return False
+        return bool(
+            getattr(self.charge_points[cp_id], "_price_pause_profile_applied", False)
+        )
 
     async def set_charger_state(
         self, cp_id: str, service_name: str, state: bool = True
@@ -933,6 +946,8 @@ class ChargePoint(cp):
         )
         if applied:
             self._price_pause_profile_applied = True
+            if hasattr(self, "central") and hasattr(self, "hass"):
+                self.hass.async_create_task(self.central.update(self.central.cpid))
         return applied
 
     async def resume_price_optimized_charging(self):
@@ -943,6 +958,8 @@ class ChargePoint(cp):
         cleared = await self.clear_profile(profile_id=PRICE_PAUSE_PROFILE_ID)
         if cleared:
             self._price_pause_profile_applied = False
+            if hasattr(self, "central") and hasattr(self, "hass"):
+                self.hass.async_create_task(self.central.update(self.central.cpid))
         return cleared
 
     async def set_availability(self, state: bool = True):
