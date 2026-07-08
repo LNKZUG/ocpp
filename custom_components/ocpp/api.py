@@ -120,6 +120,13 @@ logging.getLogger(DOMAIN).setLevel(logging.INFO)
 
 REMOTE_START_CLEANUP_DELAY = 180
 STALE_CONNECTOR_RESET_DELAY = 5
+PRICE_OPTIMIZED_CHARGE_MODE_STANDARD = "Standard"
+PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED = "Strompreis optimiert"
+PRICE_OPTIMIZED_CHARGE_MODES = [
+    PRICE_OPTIMIZED_CHARGE_MODE_STANDARD,
+    PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED,
+]
+PRICE_PAUSE_PROFILE_ID = 80
 
 TIME_MINUTES = UnitOfTime.MINUTES
 
@@ -203,6 +210,8 @@ class CentralSystem:
         self.id = entry.entry_id
         self.user_registry = hass.data[DOMAIN].get(USER_REGISTRY)
         self.selected_user_ids = {}
+        self.charge_modes = {}
+        self.price_optimized_charging_allowed = {}
         self.charge_points = {}
         if entry.data.get(CONF_SSL, DEFAULT_SSL):
             self.ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -410,6 +419,43 @@ class CentralSystem:
             return await self.charge_points[cp_id].set_charge_rate(limit_amps=value)
         return False
 
+    def get_charge_mode(self, cp_id: str) -> str:
+        """Return selected charge mode for a charge point."""
+        return self.charge_modes.get(cp_id, PRICE_OPTIMIZED_CHARGE_MODE_STANDARD)
+
+    async def set_charge_mode(self, cp_id: str, mode: str) -> bool:
+        """Set selected charge mode and apply the matching charger state."""
+        if mode not in PRICE_OPTIMIZED_CHARGE_MODES:
+            return False
+
+        self.charge_modes[cp_id] = mode
+        if cp_id not in self.charge_points:
+            return True
+
+        if mode == PRICE_OPTIMIZED_CHARGE_MODE_STANDARD:
+            return await self.charge_points[cp_id].resume_price_optimized_charging()
+
+        if not self.get_price_optimized_charging_allowed(cp_id):
+            return await self.charge_points[cp_id].pause_price_optimized_charging()
+        return True
+
+    def get_price_optimized_charging_allowed(self, cp_id: str) -> bool:
+        """Return whether price-optimized charging is currently allowed."""
+        return self.price_optimized_charging_allowed.get(cp_id, True)
+
+    async def set_price_optimized_charging_allowed(
+        self, cp_id: str, allowed: bool
+    ) -> bool:
+        """Store and apply price-optimized charging pause state."""
+        self.price_optimized_charging_allowed[cp_id] = allowed
+        if cp_id not in self.charge_points:
+            return True
+        if self.get_charge_mode(cp_id) != PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED:
+            return True
+        if allowed:
+            return await self.charge_points[cp_id].resume_price_optimized_charging()
+        return await self.charge_points[cp_id].pause_price_optimized_charging()
+
     async def set_charger_state(
         self, cp_id: str, service_name: str, state: bool = True
     ):
@@ -485,6 +531,7 @@ class ChargePoint(cp):
         self._auto_stop_task = None
         self._remote_start_cleanup_task = None
         self._remote_start_cleanup_id_tag = None
+        self._price_pause_profile_applied = False
         self.auto_stop_on_evse_suspended = entry.data.get(
             CONF_AUTO_STOP_ON_EVSE_SUSPENDED,
             DEFAULT_AUTO_STOP_ON_EVSE_SUSPENDED,
@@ -760,9 +807,12 @@ class ChargePoint(cp):
                 return_value = False
         return return_value
 
-    async def clear_profile(self):
+    async def clear_profile(self, profile_id: int | None = None):
         """Clear all charging profiles."""
-        req = call.ClearChargingProfile()
+        payload = {}
+        if profile_id is not None:
+            payload["id"] = profile_id
+        req = call.ClearChargingProfile(**payload)
         resp = await self.call(req)
         if resp.status == ClearChargingProfileStatus.accepted:
             return True
@@ -779,6 +829,7 @@ class ChargePoint(cp):
         limit_watts: int = 22000,
         conn_id: int = 0,
         profile: dict | None = None,
+        profile_id: int = 8,
     ):
         """Set a charging profile with defined limit."""
         if profile is not None:  # assumes advanced user and correct profile format
@@ -818,7 +869,7 @@ class ChargePoint(cp):
             req = call.SetChargingProfile(
                 connector_id=conn_id,
                 cs_charging_profiles={
-                    om.charging_profile_id.value: 8,
+                    om.charging_profile_id.value: profile_id,
                     om.stack_level.value: stack_level,
                     om.charging_profile_kind.value: ChargingProfileKindType.relative.value,
                     om.charging_profile_purpose.value: ChargingProfilePurposeType.charge_point_max_profile.value,
@@ -844,7 +895,7 @@ class ChargePoint(cp):
             req = call.SetChargingProfile(
                 connector_id=conn_id,
                 cs_charging_profiles={
-                    om.charging_profile_id.value: 8,
+                    om.charging_profile_id.value: profile_id,
                     om.stack_level.value: stack_level - 1,
                     om.charging_profile_kind.value: ChargingProfileKindType.relative.value,
                     om.charging_profile_purpose.value: ChargingProfilePurposeType.tx_default_profile.value,
@@ -865,6 +916,34 @@ class ChargePoint(cp):
                     f"Warning: Set charging profile failed with response {resp.status}"
                 )
                 return False
+
+    async def pause_price_optimized_charging(self):
+        """Pause charging without ending the active transaction."""
+        if self.active_transaction_id == 0:
+            return True
+        _LOGGER.info(
+            "%s pauses charging for price-optimized mode without stopping transaction %s",
+            self.id,
+            self.active_transaction_id,
+        )
+        applied = await self.set_charge_rate(
+            limit_amps=0,
+            limit_watts=0,
+            profile_id=PRICE_PAUSE_PROFILE_ID,
+        )
+        if applied:
+            self._price_pause_profile_applied = True
+        return applied
+
+    async def resume_price_optimized_charging(self):
+        """Resume charging by clearing the price-optimization pause profile."""
+        if not getattr(self, "_price_pause_profile_applied", False):
+            return True
+        _LOGGER.info("%s resumes charging for price-optimized mode", self.id)
+        cleared = await self.clear_profile(profile_id=PRICE_PAUSE_PROFILE_ID)
+        if cleared:
+            self._price_pause_profile_applied = False
+        return cleared
 
     async def set_availability(self, state: bool = True):
         """Change availability."""
@@ -1884,6 +1963,15 @@ class ChargePoint(cp):
                     self.central.cpid,
                     meter_start_kwh,
                 )
+            if (
+                hasattr(self.central, "get_charge_mode")
+                and self.central.get_charge_mode(self.central.cpid)
+                == PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED
+                and not self.central.get_price_optimized_charging_allowed(
+                    self.central.cpid
+                )
+            ):
+                self.hass.async_create_task(self.pause_price_optimized_charging())
             result = call_result.StartTransaction(
                 id_tag_info={om.status.value: AuthorizationStatus.accepted.value},
                 transaction_id=self.active_transaction_id,

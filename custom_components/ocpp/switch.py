@@ -75,6 +75,13 @@ SWITCHES: Final = [
         entity_category=EntityCategory.CONFIG,
         default_state=DEFAULT_AUTO_STOP_ON_EVSE_SUSPENDED,
     ),
+    OcppSwitchDescription(
+        key="price_optimized_charging_allowed",
+        name="Price optimized charging allowed",
+        translation_key="price_optimized_charging_allowed",
+        icon="mdi:currency-eur",
+        default_state=True,
+    ),
 ]
 
 
@@ -143,6 +150,10 @@ class ChargePointSwitch(SwitchEntity):
             self._state = self.central_system.get_auto_stop_on_evse_suspended(
                 self.cp_id
             )
+        elif self.entity_description.key == "price_optimized_charging_allowed":
+            self._state = self.central_system.get_price_optimized_charging_allowed(
+                self.cp_id
+            )
         return self._state  # type: ignore [no-any-return]
 
     async def async_turn_on(self, **kwargs: Any) -> None:
@@ -151,6 +162,13 @@ class ChargePointSwitch(SwitchEntity):
             self._state = self.central_system.set_auto_stop_on_evse_suspended(
                 self.cp_id, True
             )
+            self.async_write_ha_state()
+            return
+        if self.entity_description.key == "price_optimized_charging_allowed":
+            if await self.central_system.set_price_optimized_charging_allowed(
+                self.cp_id, True
+            ):
+                self._state = True
             self.async_write_ha_state()
             return
         self._state = await self.central_system.set_charger_state(
@@ -162,6 +180,13 @@ class ChargePointSwitch(SwitchEntity):
         """Response is True if successful but State is False"""
         if self.entity_description.key == "auto_stop_on_evse_suspended":
             if self.central_system.set_auto_stop_on_evse_suspended(self.cp_id, False):
+                self._state = False
+            self.async_write_ha_state()
+            return
+        if self.entity_description.key == "price_optimized_charging_allowed":
+            if await self.central_system.set_price_optimized_charging_allowed(
+                self.cp_id, False
+            ):
                 self._state = False
             self.async_write_ha_state()
             return

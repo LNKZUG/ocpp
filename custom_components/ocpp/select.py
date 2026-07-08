@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo
 
-from .api import CentralSystem
+from .api import CentralSystem, PRICE_OPTIMIZED_CHARGE_MODES
 from .const import CONF_CPID, DATA_USERS_UPDATED, DEFAULT_CPID, DOMAIN
 from .user_registry import async_get_user_registry
 
@@ -19,8 +19,58 @@ async def async_setup_entry(hass, entry, async_add_devices):
     cp_id = entry.data.get(CONF_CPID, DEFAULT_CPID)
     await async_get_user_registry(hass)
 
-    entity = ChargeStartUserSelect(hass, central_system, cp_id)
-    async_add_devices([entity], False)
+    entities = [
+        ChargeModeSelect(hass, central_system, cp_id),
+        ChargeStartUserSelect(hass, central_system, cp_id),
+    ]
+    async_add_devices(entities, False)
+
+
+class ChargeModeSelect(SelectEntity):
+    """Select the charger control mode."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "charge_mode"
+    _attr_icon = "mdi:ev-plug-type2"
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        central_system: CentralSystem,
+        cp_id: str,
+    ):
+        """Instantiate the charger mode select."""
+        self.hass = hass
+        self.central_system = central_system
+        self.cp_id = cp_id
+        self._attr_unique_id = ".".join(
+            [SELECT_DOMAIN, DOMAIN, self.cp_id, "charge_mode"]
+        )
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, self.cp_id)},
+            via_device=(DOMAIN, self.central_system.id),
+        )
+
+    @property
+    def available(self) -> bool:
+        """Return if the charger is available."""
+        return self.central_system.get_available(self.cp_id)
+
+    @property
+    def options(self) -> list[str]:
+        """Return available charge modes."""
+        return PRICE_OPTIMIZED_CHARGE_MODES
+
+    @property
+    def current_option(self) -> str | None:
+        """Return the current charge mode."""
+        return self.central_system.get_charge_mode(self.cp_id)
+
+    async def async_select_option(self, option: str) -> None:
+        """Select a charger control mode."""
+        if await self.central_system.set_charge_mode(self.cp_id, option):
+            self.async_write_ha_state()
+            self.hass.async_create_task(self.central_system.update(self.cp_id))
 
 
 def charge_start_user_options(registry):

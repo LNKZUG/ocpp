@@ -68,7 +68,10 @@
         "switch": {
             "auto_stop_on_evse_suspended": {"name": "Auto Stop On EVSE Suspended"},
             "availability": {"name": "Availability"},
-            "charge_control": {"name": "Charge Control"}
+            "charge_control": {"name": "Charge Control"},
+            "price_optimized_charging_allowed": {
+                "name": "Price optimized charging allowed"
+            }
         },
         "button": {
             "reset": {"name": "Reset"},
@@ -76,6 +79,7 @@
             "unlock": {"name": "Unlock"}
         },
         "select": {
+            "charge_mode": {"name": "Charge mode"},
             "charge_start_user": {"name": "Charge start user"}
         }
     }

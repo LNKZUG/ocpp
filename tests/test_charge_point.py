@@ -23,6 +23,9 @@ from custom_components.ocpp.api import (
     CentralSystem,
     ChargePoint as OcppChargePoint,
     Metric,
+    PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED,
+    PRICE_OPTIMIZED_CHARGE_MODE_STANDARD,
+    PRICE_PAUSE_PROFILE_ID,
     truncate_status_notification_info,
 )
 from custom_components.ocpp.button import BUTTONS
@@ -465,6 +468,140 @@ def test_remote_start_for_selected_user_uses_managed_user_id_tag():
 
     assert result is True
     assert charge_point.started_id_tag == "ABC"
+
+
+async def test_price_optimized_mode_pauses_and_resumes_only_when_enabled():
+    """Test the price optimized switch only controls charging in optimized mode."""
+
+    class ChargePointStub:
+        """Minimal charge point test double."""
+
+        def __init__(self):
+            self.paused = 0
+            self.resumed = 0
+
+        async def pause_price_optimized_charging(self):
+            """Record price pause calls."""
+            self.paused += 1
+            return True
+
+        async def resume_price_optimized_charging(self):
+            """Record resume calls."""
+            self.resumed += 1
+            return True
+
+    charge_point = ChargePointStub()
+    central_system = object.__new__(CentralSystem)
+    central_system.charge_modes = {}
+    central_system.price_optimized_charging_allowed = {}
+    central_system.charge_points = {"charger": charge_point}
+
+    assert await central_system.set_price_optimized_charging_allowed(
+        "charger", False
+    )
+    assert charge_point.paused == 0
+
+    assert await central_system.set_charge_mode(
+        "charger", PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED
+    )
+    assert charge_point.paused == 1
+
+    assert await central_system.set_price_optimized_charging_allowed("charger", True)
+    assert charge_point.resumed == 1
+
+    assert await central_system.set_charge_mode(
+        "charger", PRICE_OPTIMIZED_CHARGE_MODE_STANDARD
+    )
+    assert charge_point.resumed == 2
+
+
+async def test_price_optimized_pause_profile_does_not_stop_transaction():
+    """Test price pause applies a zero charging profile for the active transaction."""
+
+    calls = []
+
+    async def call(req):
+        calls.append(req)
+        if hasattr(req, "cs_charging_profiles"):
+            return call_result.SetChargingProfile(ChargingProfileStatus.accepted)
+        return call_result.ClearChargingProfile(ClearChargingProfileStatus.accepted)
+
+    async def get_configuration(key):
+        return "5"
+
+    charge_point = object.__new__(OcppChargePoint)
+    charge_point.id = "charger"
+    charge_point.active_transaction_id = 123
+    charge_point._attr_supported_features = prof.SMART
+    charge_point._price_pause_profile_applied = False
+    charge_point.call = call
+    charge_point.get_configuration = get_configuration
+
+    assert await charge_point.pause_price_optimized_charging()
+
+    profile = calls[-1].cs_charging_profiles
+    assert profile["chargingProfileId"] == PRICE_PAUSE_PROFILE_ID
+    assert profile["chargingSchedule"]["chargingSchedulePeriod"][0]["limit"] == 0
+    assert charge_point._price_pause_profile_applied is True
+
+    assert await charge_point.resume_price_optimized_charging()
+
+    assert calls[-1].id == PRICE_PAUSE_PROFILE_ID
+    assert charge_point._price_pause_profile_applied is False
+
+
+async def test_price_optimized_pause_is_applied_after_transaction_start():
+    """Test a new transaction is paused when optimized mode is waiting paused."""
+
+    class UserRegistryStub:
+        """Minimal user registry test double."""
+
+        def get_authorization_status(self, id_tag):
+            """Accept the managed idTag."""
+            return AuthorizationStatus.accepted.value
+
+        def get_user_for_id_tag(self, id_tag):
+            """Return no managed user."""
+            return None
+
+        def record_start_transaction(self, *args):
+            """Record start transaction calls."""
+
+    async def update(_cpid):
+        return None
+
+    paused = False
+
+    async def pause_price_optimized_charging():
+        nonlocal paused
+        paused = True
+        return True
+
+    charge_point = object.__new__(OcppChargePoint)
+    charge_point.id = "charger"
+    charge_point.hass = SimpleNamespace(async_create_task=asyncio.create_task)
+    charge_point.central = SimpleNamespace(
+        cpid="charger",
+        config={},
+        user_registry=UserRegistryStub(),
+        update=update,
+        get_charge_mode=lambda _cpid: PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED,
+        get_price_optimized_charging_allowed=lambda _cpid: False,
+    )
+    charge_point._metrics = defaultdict(lambda: Metric(None, None))
+    charge_point._cancel_auto_stop = lambda: None
+    charge_point._cancel_remote_start_cleanup = lambda: None
+    charge_point.pause_price_optimized_charging = pause_price_optimized_charging
+
+    result = charge_point.on_start_transaction(
+        connector_id=1,
+        id_tag="ABC",
+        meter_start=1000,
+    )
+    await asyncio.sleep(0)
+
+    assert result.id_tag_info["status"] == AuthorizationStatus.accepted.value
+    assert paused is True
 
 
 def test_charge_control_switch_requires_active_transaction():

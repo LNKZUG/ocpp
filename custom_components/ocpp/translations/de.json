@@ -144,7 +144,10 @@
                 "name": "Auto-Stopp bei EVSE-Unterbrechung"
             },
             "availability": {"name": "Verfügbarkeit"},
-            "charge_control": {"name": "Ladesteuerung"}
+            "charge_control": {"name": "Ladesteuerung"},
+            "price_optimized_charging_allowed": {
+                "name": "Preisoptimiertes Laden erlaubt"
+            }
         },
         "button": {
             "reset": {"name": "Neustart"},
@@ -154,6 +157,7 @@
             "unlock": {"name": "Entriegeln"}
         },
         "select": {
+            "charge_mode": {"name": "Lademodus"},
             "charge_start_user": {"name": "Nutzer für Ladestart"}
         }
     },
