@@ -13,6 +13,7 @@ from custom_components.ocpp.sensor import (
     UserIdTagsSensor,
     UserLastSessionEnergySensor,
     UserLastSessionFinishedSensor,
+    UserMonthlyCostSensor,
     UserMonthlyEnergySensor,
     UserStatusSensor,
     metric_display_name,
@@ -51,6 +52,7 @@ class RegistryStub:
             "active": True,
             "energy_kwh": 12.5,
             "monthly_energy_kwh": 3.5,
+            "monthly_cost": 1.23,
             "monthly_energy_period": "2026-07",
             "last_session_energy_kwh": 1.25,
             "last_session_finished_at": 1000,
@@ -215,12 +217,14 @@ def test_user_entities_expose_user_details():
     assert any(isinstance(entity, UserStatusSensor) for entity in entities)
     assert any(isinstance(entity, UserIdTagsSensor) for entity in entities)
     assert any(isinstance(entity, UserMonthlyEnergySensor) for entity in entities)
+    assert any(isinstance(entity, UserMonthlyCostSensor) for entity in entities)
     assert any(isinstance(entity, UserLastSessionEnergySensor) for entity in entities)
     assert any(isinstance(entity, UserLastSessionFinishedSensor) for entity in entities)
 
     values = {entity._attr_unique_id: entity.native_value for entity in entities}
     assert values["ocpp_user_lukas_energy"] == 12.5
     assert values["ocpp_user_lukas_monthly_energy"] == 3.5
+    assert values["ocpp_user_lukas_monthly_cost"] == 1.23
     assert values["ocpp_user_lukas_status"] == "Accepted"
     assert values["ocpp_user_lukas_id_tags"] == "02BE5E0E"
     assert values["ocpp_user_lukas_last_session_energy"] == 1.25
@@ -233,6 +237,20 @@ def test_user_monthly_energy_sensor_resets_stale_period():
     registry.user["monthly_energy_period"] = "2026-06"
 
     entity = UserMonthlyEnergySensor(None, registry, "lukas")
+
+    assert entity.native_value == 0.0
+    assert entity.extra_state_attributes == {
+        "period": "2026-07",
+        "reset_cycle": "monthly",
+    }
+
+
+def test_user_monthly_cost_sensor_resets_stale_period():
+    """Test monthly user cost displays zero for an old period."""
+    registry = RegistryStub()
+    registry.user["monthly_energy_period"] = "2026-06"
+
+    entity = UserMonthlyCostSensor(None, registry, "lukas")
 
     assert entity.native_value == 0.0
     assert entity.extra_state_attributes == {

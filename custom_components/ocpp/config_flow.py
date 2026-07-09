@@ -1,6 +1,7 @@
 """Adds config flow for ocpp."""
 from homeassistant import config_entries
 from homeassistant.core import callback
+from homeassistant.helpers import selector
 import voluptuous as vol
 
 from ocpp.v16.enums import AuthorizationStatus
@@ -9,6 +10,7 @@ from .const import (
     CONF_DEFAULT_AUTH_STATUS,
     CONF_CPID,
     CONF_CSID,
+    CONF_ENERGY_PRICE_SENSOR,
     CONF_FORCE_SMART_CHARGING,
     CONF_HOST,
     CONF_IDLE_INTERVAL,
@@ -167,12 +169,19 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 CONF_DEFAULT_AUTH_STATUS, AuthorizationStatus.accepted.value
             ),
         )
+        current_energy_price_sensor = self._config_entry.options.get(
+            CONF_ENERGY_PRICE_SENSOR,
+            self._config_entry.data.get(CONF_ENERGY_PRICE_SENSOR, ""),
+        )
 
         if user_input is not None:
             return await self._async_finish_to_main_menu(
                 {
                     **self._config_entry.options,
                     CONF_DEFAULT_AUTH_STATUS: user_input[CONF_DEFAULT_AUTH_STATUS],
+                    CONF_ENERGY_PRICE_SENSOR: user_input.get(
+                        CONF_ENERGY_PRICE_SENSOR, ""
+                    ),
                 }
             )
 
@@ -189,7 +198,13 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                             AuthorizationStatus.blocked.value,
                             AuthorizationStatus.invalid.value,
                         ]
-                    )
+                    ),
+                    vol.Optional(
+                        CONF_ENERGY_PRICE_SENSOR,
+                        default=current_energy_price_sensor or None,
+                    ): selector.EntitySelector(
+                        selector.EntitySelectorConfig(domain="sensor")
+                    ),
                 }
             ),
         )

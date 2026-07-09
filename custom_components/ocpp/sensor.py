@@ -37,6 +37,8 @@ from .const import (
 )
 from .enums import HAChargerDetails, HAChargerSession, HAChargerStatuses
 from .user_registry import (
+    USER_COST_SENSOR_DEVICE_CLASS,
+    USER_COST_SENSOR_UNIT,
     USER_MONTHLY_SENSOR_STATE_CLASS,
     USER_SENSOR_DEVICE_CLASS,
     USER_SENSOR_STATE_CLASS,
@@ -374,6 +376,7 @@ def user_entities(hass: HomeAssistant, registry, user_id: str) -> list[SensorEnt
     return [
         UserEnergySensor(hass, registry, user_id),
         UserMonthlyEnergySensor(hass, registry, user_id),
+        UserMonthlyCostSensor(hass, registry, user_id),
         UserStatusSensor(hass, registry, user_id),
         UserIdTagsSensor(hass, registry, user_id),
         UserLastSessionEnergySensor(hass, registry, user_id),
@@ -482,6 +485,42 @@ class UserMonthlyEnergySensor(UserSensorBase):
         if user.get("monthly_energy_period") != self.registry.current_month_period():
             return 0.0
         return user.get("monthly_energy_kwh", 0.0)
+
+    @property
+    def extra_state_attributes(self):
+        """Return monthly billing period metadata."""
+        user = self.user
+        if user is None:
+            return {}
+        return {
+            "period": self.registry.current_month_period(),
+            "reset_cycle": "monthly",
+        }
+
+
+class UserMonthlyCostSensor(UserSensorBase):
+    """Monthly OCPP charging cost for one managed user."""
+
+    _attr_device_class = USER_COST_SENSOR_DEVICE_CLASS
+    _attr_icon = "mdi:cash"
+    _attr_native_unit_of_measurement = USER_COST_SENSOR_UNIT
+    _attr_state_class = USER_MONTHLY_SENSOR_STATE_CLASS
+    _name_suffix = "Ladekosten Monat"
+
+    def __init__(self, hass: HomeAssistant, registry, user_id: str):
+        """Initialize a user monthly cost sensor."""
+        super().__init__(hass, registry, user_id)
+        self._attr_unique_id = f"{DOMAIN}_user_{user_id}_monthly_cost"
+
+    @property
+    def native_value(self):
+        """Return charging cost for the current local month."""
+        user = self.user
+        if user is None:
+            return None
+        if user.get("monthly_energy_period") != self.registry.current_month_period():
+            return 0.0
+        return user.get("monthly_cost", 0.0)
 
     @property
     def extra_state_attributes(self):

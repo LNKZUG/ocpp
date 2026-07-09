@@ -7,7 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
-from homeassistant.const import UnitOfEnergy
+from homeassistant.const import CURRENCY_EURO, UnitOfEnergy
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.storage import Store
@@ -91,11 +91,12 @@ class OcppUserRegistry:
 
     @callback
     def ensure_current_month(self, user: dict[str, Any]) -> None:
-        """Reset a user's monthly energy when the local month changes."""
+        """Reset a user's monthly counters when the local month changes."""
         period = self.current_month_period()
         if user.get("monthly_energy_period") != period:
             user["monthly_energy_period"] = period
             user["monthly_energy_kwh"] = 0.0
+            user["monthly_cost"] = 0.0
 
     @callback
     def list_users(self) -> list[dict[str, Any]]:
@@ -201,6 +202,7 @@ class OcppUserRegistry:
             "active": bool(active),
             "energy_kwh": 0.0,
             "monthly_energy_kwh": 0.0,
+            "monthly_cost": 0.0,
             "monthly_energy_period": self.current_month_period(),
             "created_at": time.time(),
         }
@@ -275,8 +277,9 @@ class OcppUserRegistry:
         transaction_id: int,
         cp_id: str,
         session_energy_kwh: float | None,
+        energy_price: float | None = None,
     ) -> float:
-        """Add the newly measured session energy delta to the user total."""
+        """Add the newly measured session energy delta to user totals."""
         if session_energy_kwh is None or session_energy_kwh < 0:
             return 0.0
 
@@ -302,6 +305,12 @@ class OcppUserRegistry:
             float(user.get("monthly_energy_kwh", 0.0)) + delta_energy,
             6,
         )
+        if energy_price is not None:
+            user["monthly_cost"] = round(
+                float(user.get("monthly_cost", 0.0))
+                + (delta_energy * float(energy_price)),
+                6,
+            )
         session["credited_energy_kwh"] = round(credited_energy + delta_energy, 6)
         self.schedule_save()
         self.notify_updated()
@@ -314,6 +323,7 @@ class OcppUserRegistry:
         cp_id: str,
         meter_stop_kwh: float,
         session_energy_kwh: float | None = None,
+        energy_price: float | None = None,
     ) -> None:
         """Close a user charging session and add energy to the user total."""
         session = self.sessions.pop(self.session_key(cp_id, transaction_id), None)
@@ -346,6 +356,12 @@ class OcppUserRegistry:
                 float(user.get("monthly_energy_kwh", 0.0)) + delta_energy,
                 6,
             )
+            if energy_price is not None:
+                user["monthly_cost"] = round(
+                    float(user.get("monthly_cost", 0.0))
+                    + (delta_energy * float(energy_price)),
+                    6,
+                )
         user["last_session_energy_kwh"] = round(float(session_energy_kwh), 6)
         user["last_session_finished_at"] = time.time()
         self.schedule_save()
@@ -369,6 +385,8 @@ async def async_get_user_registry(hass: HomeAssistant) -> OcppUserRegistry:
 
 
 USER_SENSOR_DEVICE_CLASS = SensorDeviceClass.ENERGY
+USER_COST_SENSOR_DEVICE_CLASS = SensorDeviceClass.MONETARY
 USER_SENSOR_STATE_CLASS = SensorStateClass.TOTAL_INCREASING
 USER_MONTHLY_SENSOR_STATE_CLASS = SensorStateClass.TOTAL
 USER_SENSOR_UNIT = UnitOfEnergy.KILO_WATT_HOUR
+USER_COST_SENSOR_UNIT = CURRENCY_EURO

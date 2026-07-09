@@ -1,11 +1,31 @@
 """Global fixtures for ocpp integration."""
 import asyncio
+import sys
 from unittest.mock import patch
 
 import pytest
 import websockets
 
 pytest_plugins = "pytest_homeassistant_custom_component"
+
+
+def pytest_collection_modifyitems(items):
+    """Allow Windows to create asyncio's local event-loop socketpair."""
+    if sys.platform != "win32":
+        return
+    for item in items:
+        item.add_marker(pytest.mark.enable_socket)
+
+
+@pytest.fixture
+def event_loop_policy():
+    """Allow Windows to create asyncio's local event-loop socketpair."""
+    if sys.platform == "win32":
+        from pytest_socket import enable_socket
+
+        enable_socket()
+
+    return asyncio.get_event_loop_policy()
 
 
 @pytest.fixture(autouse=True)

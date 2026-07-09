@@ -15,6 +15,7 @@ CONF_CPI = "charge_point_identity"
 CONF_CPID = "cpid"
 CONF_CSID = "csid"
 CONF_DEFAULT_AUTH_STATUS = "default_authorization_status"
+CONF_ENERGY_PRICE_SENSOR = "energy_price_sensor"
 CONF_HOST = ha.CONF_HOST
 CONF_ID_TAG = "id_tag"
 CONF_ICON = ha.CONF_ICON

@@ -8,6 +8,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ocpp.const import (  # BINARY_SENSOR,; PLATFORMS,; SENSOR,; SWITCH,
     CONF_DEFAULT_AUTH_STATUS,
+    CONF_ENERGY_PRICE_SENSOR,
     DOMAIN,
 )
 from custom_components.ocpp.user_registry import OcppUserRegistry
@@ -91,12 +92,14 @@ async def test_options_settings_ok_returns_to_main_menu(hass):
         result["flow_id"],
         user_input={
             CONF_DEFAULT_AUTH_STATUS: AuthorizationStatus.blocked.value,
+            CONF_ENERGY_PRICE_SENSOR: "sensor.energy_price",
         },
     )
 
     assert result["type"] == data_entry_flow.RESULT_TYPE_MENU
     assert result["step_id"] == "init"
     assert entry.options[CONF_DEFAULT_AUTH_STATUS] == AuthorizationStatus.blocked.value
+    assert entry.options[CONF_ENERGY_PRICE_SENSOR] == "sensor.energy_price"
 
 
 class _MockUserRegistry:
@@ -294,6 +297,7 @@ def test_user_registry_adds_session_energy_to_current_month(hass):
             "id_tags": ["ABC"],
             "energy_kwh": 10.0,
             "monthly_energy_kwh": 4.0,
+            "monthly_cost": 1.0,
             "monthly_energy_period": "2026-07",
         }
     }
@@ -310,10 +314,11 @@ def test_user_registry_adds_session_energy_to_current_month(hass):
     registry.schedule_save = Mock()
     registry.notify_updated = Mock()
 
-    registry.record_stop_transaction(1, "charger", 11.25)
+    registry.record_stop_transaction(1, "charger", 11.25, energy_price=0.4)
 
     assert registry.users["user-1"]["energy_kwh"] == 11.25
     assert registry.users["user-1"]["monthly_energy_kwh"] == 5.25
+    assert registry.users["user-1"]["monthly_cost"] == 1.5
     assert registry.users["user-1"]["monthly_energy_period"] == "2026-07"
     registry.schedule_save.assert_called_once()
     registry.notify_updated.assert_called_once()
@@ -329,6 +334,7 @@ def test_user_registry_adds_live_session_energy_deltas(hass):
             "id_tags": ["ABC"],
             "energy_kwh": 10.0,
             "monthly_energy_kwh": 4.0,
+            "monthly_cost": 1.0,
             "monthly_energy_period": "2026-07",
         }
     }
@@ -346,13 +352,14 @@ def test_user_registry_adds_live_session_energy_deltas(hass):
     registry.schedule_save = Mock()
     registry.notify_updated = Mock()
 
-    assert registry.record_session_energy(1, "charger", 0.5) == 0.5
-    assert registry.record_session_energy(1, "charger", 0.75) == 0.25
-    assert registry.record_session_energy(1, "charger", 0.7) == 0.0
-    registry.record_stop_transaction(1, "charger", 11.0)
+    assert registry.record_session_energy(1, "charger", 0.5, 0.3) == 0.5
+    assert registry.record_session_energy(1, "charger", 0.75, 0.4) == 0.25
+    assert registry.record_session_energy(1, "charger", 0.7, 0.5) == 0.0
+    registry.record_stop_transaction(1, "charger", 11.0, energy_price=0.6)
 
     assert registry.users["user-1"]["energy_kwh"] == 11.0
     assert registry.users["user-1"]["monthly_energy_kwh"] == 5.0
+    assert registry.users["user-1"]["monthly_cost"] == 1.4
     assert registry.users["user-1"]["last_session_energy_kwh"] == 1.0
     assert "charger:1" not in registry.sessions
     assert registry.schedule_save.call_count == 3
@@ -387,6 +394,7 @@ def test_user_registry_resets_monthly_counter_on_month_change(hass):
             "id_tags": ["ABC"],
             "energy_kwh": 10.0,
             "monthly_energy_kwh": 4.0,
+            "monthly_cost": 1.0,
             "monthly_energy_period": "2026-06",
         }
     }
@@ -403,10 +411,11 @@ def test_user_registry_resets_monthly_counter_on_month_change(hass):
     registry.schedule_save = Mock()
     registry.notify_updated = Mock()
 
-    registry.record_stop_transaction(1, "charger", 11.25)
+    registry.record_stop_transaction(1, "charger", 11.25, energy_price=0.4)
 
     assert registry.users["user-1"]["energy_kwh"] == 11.25
     assert registry.users["user-1"]["monthly_energy_kwh"] == 1.25
+    assert registry.users["user-1"]["monthly_cost"] == 0.5
     assert registry.users["user-1"]["monthly_energy_period"] == "2026-07"
 
 

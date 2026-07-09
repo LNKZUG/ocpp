@@ -178,7 +178,8 @@
             "settings": {
                 "title": "OCPP Nutzer-Einstellungen",
                 "data": {
-                    "default_authorization_status": "Standardstatus für unbekannte idTags"
+                    "default_authorization_status": "Standardstatus für unbekannte idTags",
+                    "energy_price_sensor": "Echtzeit-Strompreissensor"
                 }
             },
             "add_user": {
