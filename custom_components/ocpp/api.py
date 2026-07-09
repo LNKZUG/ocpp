@@ -649,6 +649,7 @@ class ChargePoint(cp):
         self._requires_reboot = False
         self.preparing = asyncio.Event()
         self.active_transaction_id: int = 0
+        self._stopped_transaction_ids = set()
         self.triggered_boot_notification = False
         self.received_boot_notification = False
         self.post_connect_success = False
@@ -1119,6 +1120,8 @@ class ChargePoint(cp):
     def _restore_active_transaction_id(self, transaction_id: int | None) -> None:
         """Restore active transaction id from HA state or MeterValues."""
         if self._metrics[csess.transaction_id.value].value is not None:
+            return
+        if transaction_id in getattr(self, "_stopped_transaction_ids", set()):
             return
 
         value = self.get_ha_metric(csess.transaction_id.value)
@@ -1811,6 +1814,10 @@ class ChargePoint(cp):
                         [phase_info.get(phase, 0) for phase in line_to_neutral_phases]
                     )
                 elif not phase_info.keys().isdisjoint(line_to_line_phases):
+                    if not self._metrics[metric].extra_attr.keys().isdisjoint(
+                        line_to_neutral_phases
+                    ):
+                        continue
                     # Line to line voltages are averaged and converted to line to neutral
                     metric_value = average_of_nonzero(
                         [phase_info.get(phase, 0) for phase in line_to_line_phases]
@@ -1872,6 +1879,11 @@ class ChargePoint(cp):
             transaction_matches = True
         elif transaction_id != 0:
             _LOGGER.warning("Unknown transaction detected with id=%i", transaction_id)
+        stopped_transaction = (
+            transaction_id != 0
+            and self.active_transaction_id == 0
+            and transaction_id in getattr(self, "_stopped_transaction_ids", set())
+        )
 
         for bucket in meter_value:
             unprocessed = bucket.get(om.sampled_value.name)
@@ -1919,8 +1931,8 @@ class ChargePoint(cp):
                             self._metrics[measurand].value = float(value)
                             self._metrics[measurand].unit = unit
                     elif unit == DEFAULT_ENERGY_UNIT:
+                        value_kwh = float(value) / 1000
                         if transaction_matches:
-                            value_kwh = float(value) / 1000
                             meter_start = self._metrics[
                                 csess.meter_start.value
                             ].value
@@ -1937,6 +1949,9 @@ class ChargePoint(cp):
                             else:
                                 self._metrics[measurand].value = value_kwh
                                 self._metrics[measurand].unit = HA_ENERGY_UNIT
+                        else:
+                            self._metrics[measurand].value = value_kwh
+                            self._metrics[measurand].unit = HA_ENERGY_UNIT
                     else:
                         value_float = float(value)
                         meter_start = self._metrics[
@@ -1964,7 +1979,7 @@ class ChargePoint(cp):
             for idx in sorted(processed_keys, reverse=True):
                 unprocessed.pop(idx)
             # _LOGGER.debug("Meter data not yet processed: %s", unprocessed)
-            if unprocessed:
+            if unprocessed and not stopped_transaction:
                 self.process_phases(unprocessed)
         if transaction_matches:
             if "Interruption.Begin" in contexts:
@@ -2011,6 +2026,17 @@ class ChargePoint(cp):
                     float(session_energy) if session_energy is not None else None,
                     energy_price,
                 )
+        elif transaction_id != 0 and self.active_transaction_id == 0:
+            for metric in (
+                Measurand.current_import.value,
+                Measurand.power_active_import.value,
+                Measurand.power_reactive_import.value,
+                Measurand.current_export.value,
+                Measurand.power_active_export.value,
+                Measurand.power_reactive_export.value,
+            ):
+                if metric in self._metrics:
+                    self._metrics[metric].value = 0
         self.hass.async_create_task(self.central.update(self.central.cpid))
         return call_result.MeterValues()
 
@@ -2338,18 +2364,21 @@ class ChargePoint(cp):
                 "Stop transaction received for unknown transaction id=%i",
                 transaction_id,
         )
+        stopped_transaction_ids = getattr(self, "_stopped_transaction_ids", set())
+        stopped_transaction_ids.add(transaction_id)
+        self._stopped_transaction_ids = stopped_transaction_ids
         self.active_transaction_id = 0
         self._cancel_auto_stop()
         self._cancel_remote_start_cleanup()
         self._price_pause_profile_applied = False
-        self._charger_reports_session_energy = False
+        charger_reports_session_energy = self._charger_reports_session_energy
         self._metrics[cstat.id_tag.value].value = None
         self._metrics[csess.current_user.value].value = None
         self._metrics[csess.current_user.value].extra_attr = {}
         self._metrics[cstat.stop_reason.value].value = kwargs.get(om.reason.name, None)
         if (
             self._metrics[csess.meter_start.value].value is not None
-            and not self._charger_reports_session_energy
+            and not charger_reports_session_energy
         ):
             self._metrics[csess.session_energy.value].value = int(
                 meter_stop
@@ -2384,6 +2413,7 @@ class ChargePoint(cp):
                 float(session_energy) if session_energy is not None else None,
                 energy_price,
             )
+        self._charger_reports_session_energy = False
         for metric in (
             csess.transaction_id.value,
             csess.meter_start.value,

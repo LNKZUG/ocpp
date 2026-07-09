@@ -463,7 +463,7 @@ def test_current_user_metric_maps_id_tag_to_managed_user():
     assert charge_point._metrics[csess.current_user.value].extra_attr == {}
     assert charge_point._metrics[csess.transaction_id.value].value is None
     assert charge_point._metrics[csess.meter_start.value].value is None
-    assert charge_point._metrics[csess.session_energy.value].value is None
+    assert charge_point._metrics[csess.session_energy.value].value == 1.0
     assert charge_point._metrics[csess.session_time.value].value is None
     assert charge_point._price_pause_profile_applied is False
     assert charge_point._metrics[csess.monthly_energy.value].value == 1.0
