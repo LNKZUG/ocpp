@@ -1,5 +1,19 @@
 # Release Notes
 
+## v0.5.25 - User cost sensors and meter cleanup
+
+Adds dynamic charging cost sensors for managed users and tightens meter handling after transactions stop.
+
+### Added
+
+* Adds price-based cost sensors for managed users so Home Assistant can show per-user charging costs from the configured energy price.
+
+### Fixed
+
+* Keeps transaction-specific meter values from reviving a transaction that was already stopped.
+* Clears stale live current and power values when `MeterValues` arrive for a stopped transaction.
+* Preserves session energy from chargers that report session energy directly before resetting the transaction bookkeeping.
+
 ## v0.5.24 - Persist charging controls
 
 Keeps wallbox charging controls and selected users stable across Home Assistant restarts and integration updates.
