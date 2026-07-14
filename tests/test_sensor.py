@@ -4,7 +4,6 @@ from datetime import datetime
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 
-from custom_components.ocpp.api import PRICE_OPTIMIZED_CHARGE_STATUS
 from custom_components.ocpp.const import DEFAULT_DISABLED_METRICS
 from custom_components.ocpp.enums import HAChargerSession, HAChargerStatuses
 from custom_components.ocpp.sensor import (

@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo
 
-from .api import CentralSystem, PRICE_OPTIMIZED_CHARGE_MODES
+from .api import PRICE_OPTIMIZED_CHARGE_MODES, CentralSystem
 from .const import CONF_CPID, DATA_USERS_UPDATED, DEFAULT_CPID, DOMAIN
 from .user_registry import async_get_user_registry
 

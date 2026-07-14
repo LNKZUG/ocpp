@@ -7,9 +7,9 @@ import voluptuous as vol
 from ocpp.v16.enums import AuthorizationStatus
 
 from .const import (
-    CONF_DEFAULT_AUTH_STATUS,
     CONF_CPID,
     CONF_CSID,
+    CONF_DEFAULT_AUTH_STATUS,
     CONF_ENERGY_PRICE_SENSOR,
     CONF_FORCE_SMART_CHARGING,
     CONF_HOST,
@@ -191,9 +191,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 return await self._async_finish_to_main_menu(
                     {
                         **self._config_entry.options,
-                        CONF_DEFAULT_AUTH_STATUS: user_input[
-                            CONF_DEFAULT_AUTH_STATUS
-                        ],
+                        CONF_DEFAULT_AUTH_STATUS: user_input[CONF_DEFAULT_AUTH_STATUS],
                         CONF_ENERGY_PRICE_SENSOR: energy_price_sensor,
                     }
                 )

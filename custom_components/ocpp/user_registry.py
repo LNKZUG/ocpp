@@ -11,8 +11,7 @@ from homeassistant.const import CURRENCY_EURO, UnitOfEnergy
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.storage import Store
-from homeassistant.util import dt as dt_util
-from homeassistant.util import slugify
+from homeassistant.util import dt as dt_util, slugify
 
 from ocpp.v16.enums import AuthorizationStatus
 

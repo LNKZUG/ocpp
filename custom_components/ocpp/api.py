@@ -10,13 +10,12 @@ from math import sqrt
 import ssl
 import time
 
-from homeassistant.components.persistent_notification import DOMAIN as PN_DOMAIN
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_OK, STATE_UNAVAILABLE, STATE_UNKNOWN, UnitOfTime
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry, entity_component, entity_registry
-from homeassistant.helpers.storage import Store
 import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 import voluptuous as vol
 import websockets.legacy.protocol
@@ -77,10 +76,10 @@ from .const import (
     CONF_WEBSOCKET_PING_TIMEOUT,
     CONF_WEBSOCKET_PING_TRIES,
     CONFIG,
-    DEFAULT_CPID,
-    DEFAULT_CSID,
     DEFAULT_AUTO_STOP_DELAY,
     DEFAULT_AUTO_STOP_ON_EVSE_SUSPENDED,
+    DEFAULT_CPID,
+    DEFAULT_CSID,
     DEFAULT_ENERGY_UNIT,
     DEFAULT_FORCE_SMART_CHARGING,
     DEFAULT_HOST,
@@ -155,6 +154,7 @@ def truncate_status_notification_info(action, payload: dict, max_length: int = 5
         return False
     payload["info"] = info[:max_length]
     return True
+
 
 UFW_SERVICE_DATA_SCHEMA = vol.Schema(
     {
@@ -417,11 +417,7 @@ class CentralSystem:
         if self.user_registry is None:
             return False
         user = self.user_registry.get_user(user_id)
-        if (
-            user is None
-            or not user.get("active", True)
-            or not user.get("id_tags", [])
-        ):
+        if user is None or not user.get("active", True) or not user.get("id_tags", []):
             return False
         self.selected_user_ids[cp_id] = user_id
         self.schedule_charge_state_save()
@@ -435,11 +431,7 @@ class CentralSystem:
         if user_id is None:
             return None
         user = self.user_registry.get_user(user_id)
-        if (
-            user is None
-            or not user.get("active", True)
-            or not user.get("id_tags", [])
-        ):
+        if user is None or not user.get("active", True) or not user.get("id_tags", []):
             self.selected_user_ids.pop(cp_id, None)
             self.schedule_charge_state_save()
             return None
@@ -450,16 +442,10 @@ class CentralSystem:
         if self.user_registry is None:
             return False
         user = self.user_registry.get_user(user_id)
-        if (
-            user is None
-            or not user.get("active", True)
-            or not user.get("id_tags", [])
-        ):
+        if user is None or not user.get("active", True) or not user.get("id_tags", []):
             return False
         if cp_id in self.charge_points:
-            return await self.charge_points[cp_id].start_transaction(
-                user["id_tags"][0]
-            )
+            return await self.charge_points[cp_id].start_transaction(user["id_tags"][0])
         return False
 
     async def start_transaction_for_selected_user(self, cp_id: str):
@@ -490,9 +476,7 @@ class CentralSystem:
             return True
 
         if mode == PRICE_OPTIMIZED_CHARGE_MODE_STANDARD:
-            if not await self.charge_points[
-                cp_id
-            ].resume_price_optimized_charging():
+            if not await self.charge_points[cp_id].resume_price_optimized_charging():
                 return False
             self.charge_modes[cp_id] = mode
             self.schedule_charge_state_save()
@@ -562,9 +546,7 @@ class CentralSystem:
             self.schedule_charge_state_save()
             return True
         if allowed:
-            if not await self.charge_points[
-                cp_id
-            ].resume_price_optimized_charging():
+            if not await self.charge_points[cp_id].resume_price_optimized_charging():
                 return False
             self.price_optimized_charging_allowed[cp_id] = allowed
             self.schedule_charge_state_save()
@@ -981,10 +963,10 @@ class ChargePoint(cp):
                 return False
 
         if prof.SMART in self._attr_supported_features:
-#            resp = await self.get_configuration(
-            resp=om.current.value
-#                ckey.charging_schedule_allowed_charging_rate_unit.value
-#            )
+            #            resp = await self.get_configuration(
+            resp = om.current.value
+            #                ckey.charging_schedule_allowed_charging_rate_unit.value
+            #            )
             _LOGGER.info(
                 "Charger supports setting the following units: %s",
                 resp,
@@ -1307,10 +1289,7 @@ class ChargePoint(cp):
     def _cancel_remote_start_cleanup(self):
         """Cancel pending remote-start cleanup."""
         task = getattr(self, "_remote_start_cleanup_task", None)
-        if (
-            task is not None
-            and not task.done()
-        ):
+        if task is not None and not task.done():
             task.cancel()
         self._remote_start_cleanup_task = None
         self._remote_start_cleanup_id_tag = None
@@ -1336,9 +1315,10 @@ class ChargePoint(cp):
         )
         if get_charge_mode is None or get_price_optimized_charging_allowed is None:
             return False
-        return (
-            get_charge_mode(self.central.cpid) == PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED
-            and not get_price_optimized_charging_allowed(self.central.cpid)
+        return get_charge_mode(
+            self.central.cpid
+        ) == PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED and not get_price_optimized_charging_allowed(
+            self.central.cpid
         )
 
     def _schedule_auto_stop_on_evse_suspended(self, reason: str):
@@ -1823,8 +1803,10 @@ class ChargePoint(cp):
                         [phase_info.get(phase, 0) for phase in line_to_neutral_phases]
                     )
                 elif not phase_info.keys().isdisjoint(line_to_line_phases):
-                    if not self._metrics[metric].extra_attr.keys().isdisjoint(
-                        line_to_neutral_phases
+                    if (
+                        not self._metrics[metric]
+                        .extra_attr.keys()
+                        .isdisjoint(line_to_neutral_phases)
                     ):
                         continue
                     # Line to line voltages are averaged and converted to line to neutral
@@ -1932,8 +1914,7 @@ class ChargePoint(cp):
                     if (
                         transaction_matches
                         and not has_import_register
-                        and measurand
-                        == Measurand.energy_active_import_interval.value
+                        and measurand == Measurand.energy_active_import_interval.value
                         and unit
                         in (
                             DEFAULT_ENERGY_UNIT,
@@ -1972,9 +1953,7 @@ class ChargePoint(cp):
                     elif unit == DEFAULT_ENERGY_UNIT:
                         value_kwh = float(value) / 1000
                         if transaction_matches:
-                            meter_start = self._metrics[
-                                csess.meter_start.value
-                            ].value
+                            meter_start = self._metrics[csess.meter_start.value].value
                             if (
                                 measurand == DEFAULT_MEASURAND
                                 and meter_start is not None
@@ -1993,9 +1972,7 @@ class ChargePoint(cp):
                             self._metrics[measurand].unit = HA_ENERGY_UNIT
                     else:
                         value_float = float(value)
-                        meter_start = self._metrics[
-                            csess.meter_start.value
-                        ].value
+                        meter_start = self._metrics[csess.meter_start.value].value
                         if (
                             transaction_matches
                             and measurand == DEFAULT_MEASURAND
@@ -2402,7 +2379,7 @@ class ChargePoint(cp):
             _LOGGER.error(
                 "Stop transaction received for unknown transaction id=%i",
                 transaction_id,
-        )
+            )
         stopped_transaction_ids = getattr(self, "_stopped_transaction_ids", set())
         stopped_transaction_ids.add(transaction_id)
         self._stopped_transaction_ids = stopped_transaction_ids
@@ -2531,7 +2508,7 @@ class ChargePoint(cp):
 
     async def notify_ha(self, msg: str, title: str = "Ocpp integration"):
         """Notify user via HA web frontend."""
-        #await self.hass.services.async_call(
+        # await self.hass.services.async_call(
         #    PN_DOMAIN,
         #    "create",
         #    service_data={
@@ -2539,9 +2516,9 @@ class ChargePoint(cp):
         #        "message": msg,
         #    },
         #    blocking=False,
-        #)
+        # )
 
-        #Send notification only to the log
+        # Send notification only to the log
         _LOGGER.info("Notification to HA skipped: %s", msg)
 
         return True

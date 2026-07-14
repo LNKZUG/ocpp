@@ -19,7 +19,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.util import slugify
 
-from .api import CentralSystem, PRICE_OPTIMIZED_CHARGE_STATUS
+from .api import PRICE_OPTIMIZED_CHARGE_STATUS, CentralSystem
 from .const import (
     CONF_CPID,
     DATA_UPDATED,
@@ -31,9 +31,9 @@ from .const import (
     ENTRY_TYPE,
     ENTRY_TYPE_USERS,
     ICON,
-    Measurand,
     USER_SENSOR_IDS,
     USER_SENSOR_SETUP_DONE,
+    Measurand,
 )
 from .enums import HAChargerDetails, HAChargerSession, HAChargerStatuses
 from .user_registry import (
@@ -164,9 +164,7 @@ async def async_setup_user_sensors(hass, entry, async_add_devices):
 
         add_missing_user_sensors()
         entry.async_on_unload(
-            async_dispatcher_connect(
-                hass, DATA_USERS_UPDATED, add_missing_user_sensors
-            )
+            async_dispatcher_connect(hass, DATA_USERS_UPDATED, add_missing_user_sensors)
         )
 
         @callback
@@ -320,14 +318,18 @@ class ChargePointMetric(RestoreSensor, SensorEntity):
                 PRICE_OPTIMIZED_CHARGE_STATUS
             ]
             return self._attr_native_value
-        if self.metric in (
-            HAChargerSession.current_user.value,
-            HAChargerSession.transaction_id.value,
-            HAChargerSession.meter_start.value,
-            HAChargerSession.session_energy.value,
-            HAChargerSession.session_time.value,
-            HAChargerStatuses.id_tag.value,
-        ) and value is None:
+        if (
+            self.metric
+            in (
+                HAChargerSession.current_user.value,
+                HAChargerSession.transaction_id.value,
+                HAChargerSession.meter_start.value,
+                HAChargerSession.session_energy.value,
+                HAChargerSession.session_time.value,
+                HAChargerStatuses.id_tag.value,
+            )
+            and value is None
+        ):
             self._attr_native_value = None
             return None
         if self.metric == HAChargerSession.monthly_energy.value:

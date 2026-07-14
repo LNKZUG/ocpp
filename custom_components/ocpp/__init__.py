@@ -7,9 +7,9 @@ from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers import device_registry
 import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers.typing import ConfigType
 import voluptuous as vol
 
 from ocpp.v16.enums import AuthorizationStatus

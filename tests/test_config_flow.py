@@ -2,7 +2,6 @@
 from unittest.mock import AsyncMock, Mock, patch
 
 from homeassistant import config_entries, data_entry_flow
-from ocpp.v16.enums import AuthorizationStatus
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -12,6 +11,7 @@ from custom_components.ocpp.const import (  # BINARY_SENSOR,; PLATFORMS,; SENSOR
     DOMAIN,
 )
 from custom_components.ocpp.user_registry import OcppUserRegistry
+from ocpp.v16.enums import AuthorizationStatus
 
 from .const import MOCK_CONFIG, MOCK_CONFIG_DATA
 
@@ -248,9 +248,7 @@ async def test_options_toggle_user_ok_returns_to_main_menu(hass):
         "custom_components.ocpp.config_flow.async_get_user_registry",
         return_value=registry,
     ):
-        result = await _select_options_menu_item(
-            hass, result["flow_id"], "toggle_user"
-        )
+        result = await _select_options_menu_item(hass, result["flow_id"], "toggle_user")
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], user_input={"user_id": "user-1"}
         )
@@ -275,9 +273,7 @@ async def test_options_delete_user_ok_returns_to_main_menu(hass):
         "custom_components.ocpp.config_flow.async_get_user_registry",
         return_value=registry,
     ):
-        result = await _select_options_menu_item(
-            hass, result["flow_id"], "delete_user"
-        )
+        result = await _select_options_menu_item(hass, result["flow_id"], "delete_user")
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], user_input={"user_id": "user-1"}
         )
