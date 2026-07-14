@@ -1,5 +1,36 @@
 # Release Notes
 
+## v0.5.26 - Reliable multi-wallbox lifecycle
+
+Hardens transaction ordering, persisted controls, service routing, and the release pipeline while preserving the existing one-CentralSystem-and-port-per-wallbox setup.
+
+### Added
+
+* Routes charger services to an optional `cpid`, while existing single-wallbox service calls continue to work without changes.
+* Shows monthly energy that could not be priced as `unpriced_energy_kwh` instead of silently presenting it as zero cost.
+* Adds regression coverage for delayed transaction messages, isolated state migration, invalid price units, and invalid-session cleanup.
+
+### Changed
+
+* Stores charger control state per existing config entry and transparently imports that wallbox's values from the previous shared store on first load.
+* Reapplies persisted standard or price-optimized charging intent after connect and reconnect.
+* Registers Home Assistant charger services once at integration level instead of redefining them for every connection.
+* Pins the OCPP runtime dependencies and updates the stable Home Assistant test package so clean CI installs remain reproducible.
+* Runs CI for the maintained branch and release tags and accepts normal semantic version tags in release-note backfilling.
+* Applies the repository's existing Black and isort rules to the Python source and tests.
+
+### Fixed
+
+* Prevents a delayed `StopTransaction` from clearing a newer active transaction.
+* Handles delayed transaction meter values without overwriting the absolute wallbox meter or a newer session.
+* Persists EVSE-suspend auto-stop settings even while a wallbox is disconnected.
+* Serializes post-connect setup and reconciles charging profiles after reconnects.
+* Normalizes supported `ct/kWh`, `EUR/kWh`, and `EUR/MWh` price units and rejects missing or ambiguous units.
+* Prevents shared entity descriptions and dispatcher listeners from leaking state across config entries or reloads.
+* Rejects duplicate host/port listeners, preserves user-selected monitored variables, retries unavailable ports, and validates YAML authorization lists correctly.
+* Stops invalid firmware or diagnostics URLs and read-only configuration writes before an OCPP request is sent.
+* Makes the long OCPP integration test deterministic by sending order-sensitive messages in their intended sequence.
+
 ## v0.5.25 - User cost sensors and meter cleanup
 
 Adds dynamic charging cost sensors for managed users and tightens meter handling after transactions stop.

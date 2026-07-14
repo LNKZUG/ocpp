@@ -92,7 +92,9 @@ jobs:
           with open("RELEASE_NOTES.md", encoding="utf-8") as handle:
               notes = handle.read()
 
-          headers = list(re.finditer(r"^##\s+(v0\.5\.6\.\d+)\b.*$", notes, re.MULTILINE))
+          headers = list(
+              re.finditer(r"^##\s+(v\d+\.\d+(?:\.\d+)+)\b.*$", notes, re.MULTILINE)
+          )
 
           def request(method, url, payload=None):
               data = None
