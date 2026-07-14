@@ -16,9 +16,9 @@ Add this repository to HACS as a custom integration:
 https://github.com/LNKZUG/ocpp
 ```
 
-Install release `v0.5.27` or newer from the maintained `v0.5.x` train and restart Home Assistant.
+Install release `v0.5.6.6` or newer from the `v0.5.6.x` train and restart Home Assistant.
 
-The previous experimental `v0.10.x` releases are retired in this fork. Use the `v0.5.x` train for Entratek/DUOSIDA chargers.
+The previous experimental `v0.10.x` releases are retired in this fork. Use the `v0.5.6.x` train for Entratek/DUOSIDA chargers.
 
 ## Charger URL
 

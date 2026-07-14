@@ -3,7 +3,7 @@
         "step": {
             "user": {
                 "title": "Configuración OCPP",
-                "description": "Configura la conexión con el sistema central OCPP.",
+                "description": "Si necesitas ayuda con la configuración puedes hechar un vistazo en: https://github.com/lbbrhzn/ocpp",
                 "data": {
                     "host": "Dirección de host del sistema central",
                     "port": "Número de puerto del sistema central",

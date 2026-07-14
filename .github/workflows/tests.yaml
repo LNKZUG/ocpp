@@ -6,7 +6,6 @@ on:
       - main
       - master
       - dev
-      - lnkzug-v0.5.6-known-working
   pull_request:
 
 env:
@@ -18,10 +17,10 @@ jobs:
     name: Pre-commit
     steps:
       - name: Check out the repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Set up Python ${{ env.DEFAULT_PYTHON }}
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5.1.0
         with:
           python-version: ${{ env.DEFAULT_PYTHON }}
 
@@ -38,12 +37,25 @@ jobs:
         run: |
           pre-commit run --all-files --show-diff-on-failure --color=always
 
+  hacs:
+    runs-on: "ubuntu-latest"
+    name: HACS
+    steps:
+      - name: Check out the repository
+        uses: "actions/checkout@v4"
+
+      - name: HACS validation
+        uses: "hacs/action@main"
+        with:
+          category: "integration"
+          ignore: brands
+
   hassfest:
     runs-on: "ubuntu-latest"
     name: Hassfest
     steps:
       - name: Check out the repository
-        uses: "actions/checkout@v6"
+        uses: "actions/checkout@v4"
 
       - name: Hassfest validation
         uses: "home-assistant/actions/hassfest@master"
@@ -53,9 +65,9 @@ jobs:
     environment: continuous-integration
     steps:
       - name: Check out code from GitHub
-        uses: "actions/checkout@v6"
+        uses: "actions/checkout@v4"
       - name: Setup Python ${{ env.DEFAULT_PYTHON }}
-        uses: "actions/setup-python@v6"
+        uses: "actions/setup-python@v5.1.0"
         with:
           python-version: ${{ env.DEFAULT_PYTHON }}
       - name: Install requirements

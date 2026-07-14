@@ -3,7 +3,7 @@
         "step": {
             "user": {
                 "title": "OCPP Configuratie",
-                "description": "Configureer de verbinding met het centrale OCPP-systeem.",
+                "description": "Voor hulp bij configuratie zie: https://github.com/lbbrhzn/ocpp",
                 "data": {
                     "host": "Host",
                     "port": "Poort",

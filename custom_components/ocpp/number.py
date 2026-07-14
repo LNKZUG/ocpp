@@ -1,7 +1,7 @@
 """Number platform for ocpp."""
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Final
 
 from homeassistant.components.number import (
@@ -76,12 +76,8 @@ async def async_setup_entry(hass, entry, async_add_devices):
 
     for ent in NUMBERS:
         if ent.key == "maximum_current":
-            max_current = entry.data.get(CONF_MAX_CURRENT, DEFAULT_MAX_CURRENT)
-            ent = replace(
-                ent,
-                initial_value=max_current,
-                native_max_value=max_current,
-            )
+            ent.initial_value = entry.data.get(CONF_MAX_CURRENT, DEFAULT_MAX_CURRENT)
+            ent.native_max_value = entry.data.get(CONF_MAX_CURRENT, DEFAULT_MAX_CURRENT)
         entities.append(OcppNumber(hass, central_system, cp_id, ent))
 
     async_add_devices(entities, False)
@@ -126,10 +122,8 @@ class OcppNumber(RestoreNumber, NumberEntity):
             self.central_system.set_auto_stop_delay(
                 self.cp_id, float(self._attr_native_value)
             )
-        self.async_on_remove(
-            async_dispatcher_connect(
-                self._hass, DATA_UPDATED, self._schedule_immediate_update
-            )
+        async_dispatcher_connect(
+            self._hass, DATA_UPDATED, self._schedule_immediate_update
         )
 
     @callback

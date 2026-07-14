@@ -6,15 +6,15 @@ import logging
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers import device_registry
 import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.typing import ConfigType
 import voluptuous as vol
 
 from ocpp.v16.enums import AuthorizationStatus
 
-from .api import CentralSystem, async_setup_charge_point_services
+from .api import CentralSystem
 from .const import (
     CONF_AUTH_LIST,
     CONF_AUTH_STATUS,
@@ -53,8 +53,8 @@ CONFIG_SCHEMA = vol.Schema(
         vol.Optional(
             CONF_DEFAULT_AUTH_STATUS, default=AuthorizationStatus.accepted.value
         ): cv.string,
-        vol.Optional(CONF_AUTH_LIST, default=[]): vol.All(
-            cv.ensure_list, [AUTH_LIST_SCHEMA]
+        vol.Optional(CONF_AUTH_LIST, default={}): vol.Schema(
+            {cv.string: AUTH_LIST_SCHEMA}
         ),
     },
     extra=vol.ALLOW_EXTRA,
@@ -161,7 +161,6 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
         hass.data[DOMAIN] = {}
     hass.data[DOMAIN][CONFIG] = ocpp_config
     await async_setup_user_services(hass)
-    await async_setup_charge_point_services(hass)
     _LOGGER.info(f"config = {ocpp_config}")
     return True
 
@@ -177,7 +176,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     await async_get_user_registry(hass)
     await async_setup_user_services(hass)
-    await async_setup_charge_point_services(hass)
 
     entry_type = entry.data.get(ENTRY_TYPE, ENTRY_TYPE_CENTRAL)
     if entry_type == ENTRY_TYPE_USERS:
@@ -206,12 +204,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
 async def _async_setup_central_entry_locked(hass: HomeAssistant, entry: ConfigEntry):
     """Start the central system once the entry setup lock is held."""
-    try:
-        central_sys = await CentralSystem.create(hass, entry)
-    except OSError as err:
-        raise ConfigEntryNotReady(
-            f"Cannot listen on {entry.data.get('host')}:{entry.data.get('port')}: {err}"
-        ) from err
+    central_sys = await CentralSystem.create(hass, entry)
 
     dr = device_registry.async_get(hass)
 

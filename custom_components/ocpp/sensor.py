@@ -19,7 +19,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.util import slugify
 
-from .api import PRICE_OPTIMIZED_CHARGE_STATUS, CentralSystem
+from .api import CentralSystem, PRICE_OPTIMIZED_CHARGE_STATUS
 from .const import (
     CONF_CPID,
     DATA_UPDATED,
@@ -31,9 +31,9 @@ from .const import (
     ENTRY_TYPE,
     ENTRY_TYPE_USERS,
     ICON,
+    Measurand,
     USER_SENSOR_IDS,
     USER_SENSOR_SETUP_DONE,
-    Measurand,
 )
 from .enums import HAChargerDetails, HAChargerSession, HAChargerStatuses
 from .user_registry import (
@@ -162,7 +162,9 @@ async def async_setup_user_sensors(hass, entry, async_add_devices):
 
         add_missing_user_sensors()
         entry.async_on_unload(
-            async_dispatcher_connect(hass, DATA_USERS_UPDATED, add_missing_user_sensors)
+            async_dispatcher_connect(
+                hass, DATA_USERS_UPDATED, add_missing_user_sensors
+            )
         )
 
         @callback
@@ -314,18 +316,14 @@ class ChargePointMetric(RestoreSensor, SensorEntity):
         ) and self.central_system.is_price_optimized_charging_paused(self.cp_id):
             self._attr_native_value = PRICE_OPTIMIZED_CHARGE_STATUS
             return self._attr_native_value
-        if (
-            self.metric
-            in (
-                HAChargerSession.current_user.value,
-                HAChargerSession.transaction_id.value,
-                HAChargerSession.meter_start.value,
-                HAChargerSession.session_energy.value,
-                HAChargerSession.session_time.value,
-                HAChargerStatuses.id_tag.value,
-            )
-            and value is None
-        ):
+        if self.metric in (
+            HAChargerSession.current_user.value,
+            HAChargerSession.transaction_id.value,
+            HAChargerSession.meter_start.value,
+            HAChargerSession.session_energy.value,
+            HAChargerSession.session_time.value,
+            HAChargerStatuses.id_tag.value,
+        ) and value is None:
             self._attr_native_value = None
             return None
         if self.metric == HAChargerSession.monthly_energy.value:
@@ -364,10 +362,8 @@ class ChargePointMetric(RestoreSensor, SensorEntity):
             if restored_state := await self.async_get_last_state():
                 self._extra_attr = dict(restored_state.attributes)
 
-        self.async_on_remove(
-            async_dispatcher_connect(
-                self._hass, DATA_UPDATED, self._schedule_immediate_update
-            )
+        async_dispatcher_connect(
+            self._hass, DATA_UPDATED, self._schedule_immediate_update
         )
 
     @callback
@@ -499,7 +495,6 @@ class UserMonthlyEnergySensor(UserSensorBase):
         return {
             "period": self.registry.current_month_period(),
             "reset_cycle": "monthly",
-            "unpriced_energy_kwh": user.get("monthly_unpriced_energy_kwh", 0.0),
         }
 
 
@@ -536,7 +531,6 @@ class UserMonthlyCostSensor(UserSensorBase):
         return {
             "period": self.registry.current_month_period(),
             "reset_cycle": "monthly",
-            "unpriced_energy_kwh": user.get("monthly_unpriced_energy_kwh", 0.0),
         }
 
 

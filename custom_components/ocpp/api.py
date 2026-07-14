@@ -10,17 +10,17 @@ from math import sqrt
 import ssl
 import time
 
+from homeassistant.components.persistent_notification import DOMAIN as PN_DOMAIN
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_OK, STATE_UNAVAILABLE, STATE_UNKNOWN, UnitOfTime
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry, entity_component, entity_registry
-import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.storage import Store
+import homeassistant.helpers.config_validation as cv
 from homeassistant.util import dt as dt_util
 import voluptuous as vol
-import websockets.legacy.protocol
-import websockets.legacy.server
+import websockets.protocol
+import websockets.server
 
 from ocpp.exceptions import NotImplementedError, TypeConstraintViolationError
 from ocpp.messages import CallError
@@ -54,6 +54,8 @@ from ocpp.v16.enums import (
 from .const import (
     CONF_AUTH_LIST,
     CONF_AUTH_STATUS,
+    CONF_AUTO_STOP_DELAY,
+    CONF_AUTO_STOP_ON_EVSE_SUSPENDED,
     CONF_CPID,
     CONF_CSID,
     CONF_DEFAULT_AUTH_STATUS,
@@ -75,10 +77,10 @@ from .const import (
     CONF_WEBSOCKET_PING_TIMEOUT,
     CONF_WEBSOCKET_PING_TRIES,
     CONFIG,
-    DEFAULT_AUTO_STOP_DELAY,
-    DEFAULT_AUTO_STOP_ON_EVSE_SUSPENDED,
     DEFAULT_CPID,
     DEFAULT_CSID,
+    DEFAULT_AUTO_STOP_DELAY,
+    DEFAULT_AUTO_STOP_ON_EVSE_SUSPENDED,
     DEFAULT_ENERGY_UNIT,
     DEFAULT_FORCE_SMART_CHARGING,
     DEFAULT_HOST,
@@ -153,31 +155,26 @@ def truncate_status_notification_info(action, payload: dict, max_length: int = 5
     payload["info"] = info[:max_length]
     return True
 
-
 UFW_SERVICE_DATA_SCHEMA = vol.Schema(
     {
         vol.Required("firmware_url"): cv.string,
         vol.Optional("delay_hours"): cv.positive_int,
-        vol.Optional(CONF_CPID): cv.string,
     }
 )
 CONF_SERVICE_DATA_SCHEMA = vol.Schema(
     {
         vol.Required("ocpp_key"): cv.string,
         vol.Required("value"): cv.string,
-        vol.Optional(CONF_CPID): cv.string,
     }
 )
 GCONF_SERVICE_DATA_SCHEMA = vol.Schema(
     {
         vol.Required("ocpp_key"): cv.string,
-        vol.Optional(CONF_CPID): cv.string,
     }
 )
 GDIAG_SERVICE_DATA_SCHEMA = vol.Schema(
     {
         vol.Required("upload_url"): cv.string,
-        vol.Optional(CONF_CPID): cv.string,
     }
 )
 TRANS_SERVICE_DATA_SCHEMA = vol.Schema(
@@ -185,7 +182,6 @@ TRANS_SERVICE_DATA_SCHEMA = vol.Schema(
         vol.Required("vendor_id"): cv.string,
         vol.Optional("message_id"): cv.string,
         vol.Optional("data"): cv.string,
-        vol.Optional(CONF_CPID): cv.string,
     }
 )
 CHRGR_SERVICE_DATA_SCHEMA = vol.Schema(
@@ -194,7 +190,6 @@ CHRGR_SERVICE_DATA_SCHEMA = vol.Schema(
         vol.Optional("limit_watts"): cv.positive_int,
         vol.Optional("conn_id"): cv.positive_int,
         vol.Optional("custom_profile"): vol.Any(cv.string, dict),
-        vol.Optional(CONF_CPID): cv.string,
     }
 )
 
@@ -228,19 +223,10 @@ class CentralSystem:
         self.config = entry.data
         self.id = entry.entry_id
         self.user_registry = hass.data[DOMAIN].get(USER_REGISTRY)
-        self._charge_state_store = Store(
-            hass,
-            STORAGE_VERSION,
-            f"{STORAGE_CHARGE_STATE}_{entry.entry_id}",
-        )
-        self._legacy_charge_state_store = Store(
-            hass, STORAGE_VERSION, STORAGE_CHARGE_STATE
-        )
+        self._charge_state_store = Store(hass, STORAGE_VERSION, STORAGE_CHARGE_STATE)
         self.selected_user_ids = {}
         self.charge_modes = {}
         self.price_optimized_charging_allowed = {}
-        self.auto_stop_on_evse_suspended = {}
-        self.auto_stop_delays = {}
         self.charge_points = {}
         if entry.data.get(CONF_SSL, DEFAULT_SSL):
             self.ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -263,7 +249,7 @@ class CentralSystem:
         self = CentralSystem(hass, entry)
         await self.async_load_charge_state()
 
-        server = await websockets.legacy.server.serve(
+        server = await websockets.server.serve(
             self.on_connect,
             self.host,
             self.port,
@@ -280,21 +266,7 @@ class CentralSystem:
         """Load persisted charger control state."""
         data = await self._charge_state_store.async_load()
         if data is None:
-            legacy_data = await self._legacy_charge_state_store.async_load() or {}
-            data = {
-                key: {self.cpid: values[self.cpid]}
-                for key in (
-                    "selected_user_ids",
-                    "charge_modes",
-                    "price_optimized_charging_allowed",
-                    "auto_stop_on_evse_suspended",
-                    "auto_stop_delays",
-                )
-                if isinstance((values := legacy_data.get(key)), dict)
-                and self.cpid in values
-            }
-            if data:
-                await self._charge_state_store.async_save(data)
+            data = {}
         self.selected_user_ids = dict(data.get("selected_user_ids", {}))
         self.charge_modes = {
             cp_id: mode
@@ -307,14 +279,6 @@ class CentralSystem:
                 "price_optimized_charging_allowed", {}
             ).items()
         }
-        self.auto_stop_on_evse_suspended = {
-            cp_id: bool(enabled)
-            for cp_id, enabled in data.get("auto_stop_on_evse_suspended", {}).items()
-        }
-        self.auto_stop_delays = {
-            cp_id: float(delay)
-            for cp_id, delay in data.get("auto_stop_delays", {}).items()
-        }
 
     async def async_save_charge_state(self) -> None:
         """Persist charger control state."""
@@ -325,10 +289,6 @@ class CentralSystem:
                 "price_optimized_charging_allowed": (
                     self.price_optimized_charging_allowed
                 ),
-                "auto_stop_on_evse_suspended": getattr(
-                    self, "auto_stop_on_evse_suspended", {}
-                ),
-                "auto_stop_delays": getattr(self, "auto_stop_delays", {}),
             }
         )
 
@@ -339,7 +299,7 @@ class CentralSystem:
             self.hass.async_create_task(self.async_save_charge_state())
 
     async def on_connect(
-        self, websocket: websockets.legacy.server.WebSocketServerProtocol, path: str
+        self, websocket: websockets.server.WebSocketServerProtocol, path: str
     ):
         """Request handler executed for every new OCPP connection."""
         if self.config.get(CONF_SKIP_SCHEMA_VALIDATION, DEFAULT_SKIP_SCHEMA_VALIDATION):
@@ -360,9 +320,8 @@ class CentralSystem:
                 return await websocket.close()
 
         _LOGGER.info(f"Charger websocket path={path}")
-        reported_cp_id = path.strip("/")
-        reported_cp_id = reported_cp_id[reported_cp_id.rfind("/") + 1 :]
-        cp_id = reported_cp_id or self.cpid
+        cp_id = path.strip("/")
+        cp_id = cp_id[cp_id.rfind("/") + 1 :]
         if self.cpid not in self.charge_points:
             _LOGGER.info(f"Charger {cp_id} connected to {self.host}:{self.port}.")
             charge_point = ChargePoint(cp_id, websocket, self.hass, self.entry, self)
@@ -420,9 +379,7 @@ class CentralSystem:
         """Return whether EVSE suspend should automatically stop the transaction."""
         if cp_id in self.charge_points:
             return self.charge_points[cp_id].auto_stop_on_evse_suspended
-        return getattr(self, "auto_stop_on_evse_suspended", {}).get(
-            cp_id, DEFAULT_AUTO_STOP_ON_EVSE_SUSPENDED
-        )
+        return DEFAULT_AUTO_STOP_ON_EVSE_SUSPENDED
 
     def has_active_transaction(self, cp_id: str):
         """Return whether the charger has an active transaction."""
@@ -432,29 +389,23 @@ class CentralSystem:
 
     def set_auto_stop_on_evse_suspended(self, cp_id: str, value: bool):
         """Set whether EVSE suspend should automatically stop the transaction."""
-        if not hasattr(self, "auto_stop_on_evse_suspended"):
-            self.auto_stop_on_evse_suspended = {}
-        self.auto_stop_on_evse_suspended[cp_id] = bool(value)
         if cp_id in self.charge_points:
-            self.charge_points[cp_id].auto_stop_on_evse_suspended = bool(value)
-        self.schedule_charge_state_save()
-        return True
+            self.charge_points[cp_id].auto_stop_on_evse_suspended = value
+            return True
+        return False
 
     def get_auto_stop_delay(self, cp_id: str):
         """Return EVSE suspend auto-stop delay in seconds."""
         if cp_id in self.charge_points:
             return self.charge_points[cp_id].auto_stop_delay
-        return getattr(self, "auto_stop_delays", {}).get(cp_id, DEFAULT_AUTO_STOP_DELAY)
+        return DEFAULT_AUTO_STOP_DELAY
 
     def set_auto_stop_delay(self, cp_id: str, value: float):
         """Set EVSE suspend auto-stop delay in seconds."""
-        if not hasattr(self, "auto_stop_delays"):
-            self.auto_stop_delays = {}
-        self.auto_stop_delays[cp_id] = float(value)
         if cp_id in self.charge_points:
-            self.charge_points[cp_id].auto_stop_delay = float(value)
-        self.schedule_charge_state_save()
-        return True
+            self.charge_points[cp_id].auto_stop_delay = value
+            return True
+        return False
 
     def set_selected_user(self, cp_id: str, user_id: str | None) -> bool:
         """Store the selected OCPP user for a charge point."""
@@ -465,7 +416,11 @@ class CentralSystem:
         if self.user_registry is None:
             return False
         user = self.user_registry.get_user(user_id)
-        if user is None or not user.get("active", True) or not user.get("id_tags", []):
+        if (
+            user is None
+            or not user.get("active", True)
+            or not user.get("id_tags", [])
+        ):
             return False
         self.selected_user_ids[cp_id] = user_id
         self.schedule_charge_state_save()
@@ -479,7 +434,11 @@ class CentralSystem:
         if user_id is None:
             return None
         user = self.user_registry.get_user(user_id)
-        if user is None or not user.get("active", True) or not user.get("id_tags", []):
+        if (
+            user is None
+            or not user.get("active", True)
+            or not user.get("id_tags", [])
+        ):
             self.selected_user_ids.pop(cp_id, None)
             self.schedule_charge_state_save()
             return None
@@ -490,10 +449,16 @@ class CentralSystem:
         if self.user_registry is None:
             return False
         user = self.user_registry.get_user(user_id)
-        if user is None or not user.get("active", True) or not user.get("id_tags", []):
+        if (
+            user is None
+            or not user.get("active", True)
+            or not user.get("id_tags", [])
+        ):
             return False
         if cp_id in self.charge_points:
-            return await self.charge_points[cp_id].start_transaction(user["id_tags"][0])
+            return await self.charge_points[cp_id].start_transaction(
+                user["id_tags"][0]
+            )
         return False
 
     async def start_transaction_for_selected_user(self, cp_id: str):
@@ -524,9 +489,9 @@ class CentralSystem:
             return True
 
         if mode == PRICE_OPTIMIZED_CHARGE_MODE_STANDARD:
-            if not await self.charge_points[cp_id].resume_price_optimized_charging(
-                force=True
-            ):
+            if not await self.charge_points[
+                cp_id
+            ].resume_price_optimized_charging():
                 return False
             self.charge_modes[cp_id] = mode
             self.schedule_charge_state_save()
@@ -572,19 +537,9 @@ class CentralSystem:
                 state.state,
             )
             return None
-        unit = str(state.attributes.get("unit_of_measurement", ""))
-        normalized_unit = unit.lower().replace(" ", "")
-        if normalized_unit in ("ct/kwh", "cent/kwh", "c/kwh"):
+        unit = str(state.attributes.get("unit_of_measurement", "")).lower()
+        if "ct/" in unit or "cent/" in unit or unit.startswith("ct"):
             price = price / 100
-        elif normalized_unit in ("eur/mwh", "€/mwh", "euro/mwh"):
-            price = price / 1000
-        elif normalized_unit not in ("eur/kwh", "€/kwh", "euro/kwh"):
-            _LOGGER.warning(
-                "Ignoring OCPP energy price sensor %s with unsupported unit %s",
-                entity_id,
-                unit or "<missing>",
-            )
-            return None
         return price
 
     async def set_price_optimized_charging_allowed(
@@ -600,7 +555,9 @@ class CentralSystem:
             self.schedule_charge_state_save()
             return True
         if allowed:
-            if not await self.charge_points[cp_id].resume_price_optimized_charging():
+            if not await self.charge_points[
+                cp_id
+            ].resume_price_optimized_charging():
                 return False
             self.price_optimized_charging_allowed[cp_id] = allowed
             self.schedule_charge_state_save()
@@ -668,7 +625,7 @@ class ChargePoint(cp):
     def __init__(
         self,
         id: str,
-        connection: websockets.legacy.server.WebSocketServerProtocol,
+        connection: websockets.server.WebSocketServerProtocol,
         hass: HomeAssistant,
         entry: ConfigEntry,
         central: CentralSystem,
@@ -693,7 +650,6 @@ class ChargePoint(cp):
         self.preparing = asyncio.Event()
         self.active_transaction_id: int = 0
         self._stopped_transaction_ids = set()
-        self._stopped_session_energy_transaction_ids = set()
         self.triggered_boot_notification = False
         self.received_boot_notification = False
         self.post_connect_success = False
@@ -702,11 +658,14 @@ class ChargePoint(cp):
         self._remote_start_cleanup_task = None
         self._remote_start_cleanup_id_tag = None
         self._price_pause_profile_applied = False
-        self._post_connect_lock = asyncio.Lock()
-        self.auto_stop_on_evse_suspended = central.get_auto_stop_on_evse_suspended(
-            central.cpid
+        self.auto_stop_on_evse_suspended = entry.data.get(
+            CONF_AUTO_STOP_ON_EVSE_SUSPENDED,
+            DEFAULT_AUTO_STOP_ON_EVSE_SUSPENDED,
         )
-        self.auto_stop_delay = central.get_auto_stop_delay(central.cpid)
+        self.auto_stop_delay = entry.data.get(
+            CONF_AUTO_STOP_DELAY,
+            DEFAULT_AUTO_STOP_DELAY,
+        )
         self._charger_reports_session_energy = False
         self._metrics = defaultdict(lambda: Metric(None, None))
         self._metrics[cdet.identifier.value].value = id
@@ -718,15 +677,80 @@ class ChargePoint(cp):
         self._metrics[cstat.reconnects.value].value: int = 0
         self.restore_latest_active_session_from_registry()
 
-    async def post_connect(self, force: bool = False):
+    async def post_connect(self):
         """Logic to be executed right after a charger connects."""
-        async with self._post_connect_lock:
-            if self.post_connect_success and not force:
-                return
-            await self._post_connect()
 
-    async def _post_connect(self):
-        """Configure a newly connected charger exactly once."""
+        # Define custom service handles for charge point
+        async def handle_clear_profile(call):
+            """Handle the clear profile service call."""
+            if self.status == STATE_UNAVAILABLE:
+                _LOGGER.warning("%s charger is currently unavailable", self.id)
+                return
+            await self.clear_profile()
+
+        async def handle_update_firmware(call):
+            """Handle the firmware update service call."""
+            if self.status == STATE_UNAVAILABLE:
+                _LOGGER.warning("%s charger is currently unavailable", self.id)
+                return
+            url = call.data.get("firmware_url")
+            delay = int(call.data.get("delay_hours", 0))
+            await self.update_firmware(url, delay)
+
+        async def handle_configure(call):
+            """Handle the configure service call."""
+            if self.status == STATE_UNAVAILABLE:
+                _LOGGER.warning("%s charger is currently unavailable", self.id)
+                return
+            key = call.data.get("ocpp_key")
+            value = call.data.get("value")
+            await self.configure(key, value)
+
+        async def handle_get_configuration(call):
+            """Handle the get configuration service call."""
+            if self.status == STATE_UNAVAILABLE:
+                _LOGGER.warning("%s charger is currently unavailable", self.id)
+                return
+            key = call.data.get("ocpp_key")
+            await self.get_configuration(key)
+
+        async def handle_get_diagnostics(call):
+            """Handle the get get diagnostics service call."""
+            if self.status == STATE_UNAVAILABLE:
+                _LOGGER.warning("%s charger is currently unavailable", self.id)
+                return
+            url = call.data.get("upload_url")
+            await self.get_diagnostics(url)
+
+        async def handle_data_transfer(call):
+            """Handle the data transfer service call."""
+            if self.status == STATE_UNAVAILABLE:
+                _LOGGER.warning("%s charger is currently unavailable", self.id)
+                return
+            vendor = call.data.get("vendor_id")
+            message = call.data.get("message_id", "")
+            data = call.data.get("data", "")
+            await self.data_transfer(vendor, message, data)
+
+        async def handle_set_charge_rate(call):
+            """Handle the data transfer service call."""
+            if self.status == STATE_UNAVAILABLE:
+                _LOGGER.warning("%s charger is currently unavailable", self.id)
+                return
+            amps = call.data.get("limit_amps", None)
+            watts = call.data.get("limit_watts", None)
+            id = call.data.get("conn_id", 0)
+            custom_profile = call.data.get("custom_profile", None)
+            if custom_profile is not None:
+                if type(custom_profile) is str:
+                    custom_profile = custom_profile.replace("'", '"')
+                    custom_profile = json.loads(custom_profile)
+                await self.set_charge_rate(profile=custom_profile, conn_id=id)
+            elif watts is not None:
+                await self.set_charge_rate(limit_watts=watts, conn_id=id)
+            elif amps is not None:
+                await self.set_charge_rate(limit_amps=amps, conn_id=id)
+
         try:
             self.status = STATE_OK
             await asyncio.sleep(2)
@@ -783,6 +807,48 @@ class ChargePoint(cp):
             #            )
             #            await self.start_transaction()
 
+            # Register custom services with home assistant
+            self.hass.services.async_register(
+                DOMAIN,
+                csvcs.service_configure.value,
+                handle_configure,
+                CONF_SERVICE_DATA_SCHEMA,
+            )
+            self.hass.services.async_register(
+                DOMAIN,
+                csvcs.service_get_configuration.value,
+                handle_get_configuration,
+                GCONF_SERVICE_DATA_SCHEMA,
+            )
+            self.hass.services.async_register(
+                DOMAIN,
+                csvcs.service_data_transfer.value,
+                handle_data_transfer,
+                TRANS_SERVICE_DATA_SCHEMA,
+            )
+            if prof.SMART in self._attr_supported_features:
+                self.hass.services.async_register(
+                    DOMAIN, csvcs.service_clear_profile.value, handle_clear_profile
+                )
+                self.hass.services.async_register(
+                    DOMAIN,
+                    csvcs.service_set_charge_rate.value,
+                    handle_set_charge_rate,
+                    CHRGR_SERVICE_DATA_SCHEMA,
+                )
+            if prof.FW in self._attr_supported_features:
+                self.hass.services.async_register(
+                    DOMAIN,
+                    csvcs.service_update_firmware.value,
+                    handle_update_firmware,
+                    UFW_SERVICE_DATA_SCHEMA,
+                )
+                self.hass.services.async_register(
+                    DOMAIN,
+                    csvcs.service_get_diagnostics.value,
+                    handle_get_diagnostics,
+                    GDIAG_SERVICE_DATA_SCHEMA,
+                )
             self.post_connect_success = True
             _LOGGER.debug(f"'{self.id}' post connection setup completed successfully")
 
@@ -794,7 +860,6 @@ class ChargePoint(cp):
                 if self.received_boot_notification is False:
                     await self.trigger_boot_notification()
                 await self.trigger_status_notification()
-            await self.reconcile_charge_control_state()
         except NotImplementedError as e:
             _LOGGER.error("Configuration of the charger failed: %s", e)
 
@@ -909,10 +974,10 @@ class ChargePoint(cp):
                 return False
 
         if prof.SMART in self._attr_supported_features:
-            #            resp = await self.get_configuration(
-            resp = om.current.value
-            #                ckey.charging_schedule_allowed_charging_rate_unit.value
-            #            )
+#            resp = await self.get_configuration(
+            resp=om.current.value
+#                ckey.charging_schedule_allowed_charging_rate_unit.value
+#            )
             _LOGGER.info(
                 "Charger supports setting the following units: %s",
                 resp,
@@ -1150,9 +1215,9 @@ class ChargePoint(cp):
                 self.hass.async_create_task(self.central.update(self.central.cpid))
         return applied
 
-    async def resume_price_optimized_charging(self, force: bool = False):
+    async def resume_price_optimized_charging(self):
         """Resume charging by clearing the price-optimization pause profile."""
-        if not force and not getattr(self, "_price_pause_profile_applied", False):
+        if not getattr(self, "_price_pause_profile_applied", False):
             return True
         snapshot = self._active_session_snapshot()
         _LOGGER.info("%s resumes charging for price-optimized mode", self.id)
@@ -1163,21 +1228,6 @@ class ChargePoint(cp):
             if hasattr(self, "central") and hasattr(self, "hass"):
                 self.hass.async_create_task(self.central.update(self.central.cpid))
         return cleared
-
-    async def reconcile_charge_control_state(self) -> None:
-        """Apply the persisted charging intent after connect or reconnect."""
-        if prof.SMART not in self._attr_supported_features:
-            return
-        mode = self.central.get_charge_mode(self.central.cpid)
-        allowed = self.central.get_price_optimized_charging_allowed(self.central.cpid)
-        if (
-            mode == PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED
-            and not allowed
-            and self.active_transaction_id != 0
-        ):
-            await self.pause_price_optimized_charging()
-            return
-        await self.resume_price_optimized_charging(force=True)
 
     async def set_availability(self, state: bool = True):
         """Change availability."""
@@ -1204,7 +1254,7 @@ class ChargePoint(cp):
         Check if authorisation enabled, if it is disable it before remote start
         """
         resp = await self.get_configuration(ckey.authorize_remote_tx_requests.value)
-        if str(resp).strip().lower() == "true":
+        if resp is True:
             await self.configure(ckey.authorize_remote_tx_requests.value, "false")
         if id_tag is None:
             id_tag = self._metrics[cdet.identifier.value].value[:20]
@@ -1250,7 +1300,10 @@ class ChargePoint(cp):
     def _cancel_remote_start_cleanup(self):
         """Cancel pending remote-start cleanup."""
         task = getattr(self, "_remote_start_cleanup_task", None)
-        if task is not None and not task.done():
+        if (
+            task is not None
+            and not task.done()
+        ):
             task.cancel()
         self._remote_start_cleanup_task = None
         self._remote_start_cleanup_id_tag = None
@@ -1276,10 +1329,9 @@ class ChargePoint(cp):
         )
         if get_charge_mode is None or get_price_optimized_charging_allowed is None:
             return False
-        return get_charge_mode(
-            self.central.cpid
-        ) == PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED and not get_price_optimized_charging_allowed(
-            self.central.cpid
+        return (
+            get_charge_mode(self.central.cpid) == PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED
+            and not get_price_optimized_charging_allowed(self.central.cpid)
         )
 
     def _schedule_auto_stop_on_evse_suspended(self, reason: str):
@@ -1459,8 +1511,7 @@ class ChargePoint(cp):
             try:
                 url = schema(firmware_url)
             except vol.MultipleInvalid as e:
-                _LOGGER.warning("Failed to parse firmware URL: %s", e)
-                return False
+                _LOGGER.debug("Failed to parse url: %s", e)
             update_time = (
                 datetime.now(tz=timezone.utc) + timedelta(hours=wait_time)
             ).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -1480,7 +1531,6 @@ class ChargePoint(cp):
                 url = schema(upload_url)
             except vol.MultipleInvalid as e:
                 _LOGGER.warning("Failed to parse url: %s", e)
-                return False
             req = call.GetDiagnostics(location=url)
             resp = await self.call(req)
             _LOGGER.info("Response: %s", resp)
@@ -1561,7 +1611,6 @@ class ChargePoint(cp):
             if key_value.get(om.readonly.name, False):
                 _LOGGER.warning("%s is a read only setting", key)
                 await self.notify_ha(f"Warning: {key} is read-only")
-                return False
 
         req = call.ChangeConfiguration(key=key, value=value)
 
@@ -1579,10 +1628,6 @@ class ChargePoint(cp):
         if resp.status == ConfigurationStatus.reboot_required:
             self._requires_reboot = True
             await self.notify_ha(f"A reboot is required to apply {key}={value}")
-        return resp.status in (
-            ConfigurationStatus.accepted,
-            ConfigurationStatus.reboot_required,
-        )
 
     async def _get_specific_response(self, unique_id, timeout):
         # The ocpp library silences CallErrors by default. See
@@ -1684,7 +1729,6 @@ class ChargePoint(cp):
         """Close connection and cancel ongoing tasks."""
         self.status = STATE_UNAVAILABLE
         self._cancel_auto_stop()
-        self._cancel_remote_start_cleanup()
         if self._connection.open:
             _LOGGER.debug(f"Closing websocket to '{self.id}'")
             await self._connection.close()
@@ -1692,9 +1736,7 @@ class ChargePoint(cp):
             for task in self.tasks:
                 task.cancel()
 
-    async def reconnect(
-        self, connection: websockets.legacy.server.WebSocketServerProtocol
-    ):
+    async def reconnect(self, connection: websockets.server.WebSocketServerProtocol):
         """Reconnect charge point."""
         _LOGGER.debug(f"Reconnect websocket to {self.id}")
 
@@ -1703,27 +1745,11 @@ class ChargePoint(cp):
         self._connection = connection
         self._metrics[cstat.reconnects.value].value += 1
         if self.post_connect_success is True:
-            await self.run(
-                [
-                    super().start(),
-                    self.monitor_connection(),
-                    self._reconcile_after_reconnect(),
-                ]
-            )
+            await self.run([super().start(), self.monitor_connection()])
         else:
             await self.run(
                 [super().start(), self.post_connect(), self.monitor_connection()]
             )
-
-    async def _reconcile_after_reconnect(self) -> None:
-        """Reapply persisted charger controls once message handling is running."""
-        await asyncio.sleep(0)
-        try:
-            await self.reconcile_charge_control_state()
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            _LOGGER.exception("%s failed to reconcile charger controls", self.id)
 
     async def async_update_device_info(self, boot_info: dict):
         """Update device info asynchronuously."""
@@ -1788,10 +1814,8 @@ class ChargePoint(cp):
                         [phase_info.get(phase, 0) for phase in line_to_neutral_phases]
                     )
                 elif not phase_info.keys().isdisjoint(line_to_line_phases):
-                    if (
-                        not self._metrics[metric]
-                        .extra_attr.keys()
-                        .isdisjoint(line_to_neutral_phases)
+                    if not self._metrics[metric].extra_attr.keys().isdisjoint(
+                        line_to_neutral_phases
                     ):
                         continue
                     # Line to line voltages are averaged and converted to line to neutral
@@ -1857,36 +1881,9 @@ class ChargePoint(cp):
             _LOGGER.warning("Unknown transaction detected with id=%i", transaction_id)
         stopped_transaction = (
             transaction_id != 0
-            and transaction_id != self.active_transaction_id
+            and self.active_transaction_id == 0
             and transaction_id in getattr(self, "_stopped_transaction_ids", set())
         )
-        if stopped_transaction:
-            _LOGGER.debug(
-                "Processing delayed session energy for stopped transaction id=%s",
-                transaction_id,
-            )
-            if self.active_transaction_id != 0 or transaction_id not in getattr(
-                self, "_stopped_session_energy_transaction_ids", set()
-            ):
-                return call_result.MeterValues()
-            for bucket in meter_value:
-                sampled_values = bucket.get(
-                    om.sampled_value.name,
-                    bucket.get(om.sampled_value.value, []),
-                )
-                for sampled_value in sampled_values:
-                    measurand = sampled_value.get(om.measurand.value, DEFAULT_MEASURAND)
-                    if measurand != DEFAULT_MEASURAND:
-                        continue
-                    value = sampled_value.get(om.value.value)
-                    if value is None:
-                        continue
-                    unit = sampled_value.get(om.unit.value, DEFAULT_ENERGY_UNIT)
-                    if unit == DEFAULT_ENERGY_UNIT:
-                        value = float(value) / 1000
-                        unit = HA_ENERGY_UNIT
-                    self._set_session_energy(float(value), unit)
-            return call_result.MeterValues()
 
         for bucket in meter_value:
             unprocessed = bucket.get(om.sampled_value.name)
@@ -1936,7 +1933,9 @@ class ChargePoint(cp):
                     elif unit == DEFAULT_ENERGY_UNIT:
                         value_kwh = float(value) / 1000
                         if transaction_matches:
-                            meter_start = self._metrics[csess.meter_start.value].value
+                            meter_start = self._metrics[
+                                csess.meter_start.value
+                            ].value
                             if (
                                 measurand == DEFAULT_MEASURAND
                                 and meter_start is not None
@@ -1955,7 +1954,9 @@ class ChargePoint(cp):
                             self._metrics[measurand].unit = HA_ENERGY_UNIT
                     else:
                         value_float = float(value)
-                        meter_start = self._metrics[csess.meter_start.value].value
+                        meter_start = self._metrics[
+                            csess.meter_start.value
+                        ].value
                         if (
                             transaction_matches
                             and measurand == DEFAULT_MEASURAND
@@ -1978,7 +1979,7 @@ class ChargePoint(cp):
             for idx in sorted(processed_keys, reverse=True):
                 unprocessed.pop(idx)
             # _LOGGER.debug("Meter data not yet processed: %s", unprocessed)
-            if unprocessed:
+            if unprocessed and not stopped_transaction:
                 self.process_phases(unprocessed)
         if transaction_matches:
             if "Interruption.Begin" in contexts:
@@ -2067,9 +2068,7 @@ class ChargePoint(cp):
         self.hass.async_create_task(self.central.update(self.central.cpid))
         if self.triggered_boot_notification is False:
             self.hass.async_create_task(self.notify_ha(f"Charger {self.id} rebooted"))
-            self.hass.async_create_task(
-                self.post_connect(force=self.post_connect_success)
-            )
+            self.hass.async_create_task(self.post_connect())
         return resp
 
     @on(Action.status_notification)
@@ -2361,17 +2360,10 @@ class ChargePoint(cp):
         """Stop the current transaction."""
 
         if transaction_id != self.active_transaction_id:
-            _LOGGER.warning(
-                "Ignoring StopTransaction for transaction id=%s while active id=%s",
+            _LOGGER.error(
+                "Stop transaction received for unknown transaction id=%i",
                 transaction_id,
-                self.active_transaction_id,
-            )
-            stopped_transaction_ids = getattr(self, "_stopped_transaction_ids", set())
-            stopped_transaction_ids.add(transaction_id)
-            self._stopped_transaction_ids = stopped_transaction_ids
-            return call_result.StopTransaction(
-                id_tag_info={om.status.value: AuthorizationStatus.accepted.value}
-            )
+        )
         stopped_transaction_ids = getattr(self, "_stopped_transaction_ids", set())
         stopped_transaction_ids.add(transaction_id)
         self._stopped_transaction_ids = stopped_transaction_ids
@@ -2379,16 +2371,7 @@ class ChargePoint(cp):
         self._cancel_auto_stop()
         self._cancel_remote_start_cleanup()
         self._price_pause_profile_applied = False
-        meter_start = self._metrics[csess.meter_start.value].value
-        charger_reports_session_energy = (
-            self._charger_reports_session_energy or meter_start == 0
-        )
-        if charger_reports_session_energy:
-            stopped_session_ids = getattr(
-                self, "_stopped_session_energy_transaction_ids", set()
-            )
-            stopped_session_ids.add(transaction_id)
-            self._stopped_session_energy_transaction_ids = stopped_session_ids
+        charger_reports_session_energy = self._charger_reports_session_energy
         self._metrics[cstat.id_tag.value].value = None
         self._metrics[csess.current_user.value].value = None
         self._metrics[csess.current_user.value].extra_attr = {}
@@ -2509,7 +2492,7 @@ class ChargePoint(cp):
 
     async def notify_ha(self, msg: str, title: str = "Ocpp integration"):
         """Notify user via HA web frontend."""
-        # await self.hass.services.async_call(
+        #await self.hass.services.async_call(
         #    PN_DOMAIN,
         #    "create",
         #    service_data={
@@ -2517,9 +2500,9 @@ class ChargePoint(cp):
         #        "message": msg,
         #    },
         #    blocking=False,
-        # )
+        #)
 
-        # Send notification only to the log
+        #Send notification only to the log
         _LOGGER.info("Notification to HA skipped: %s", msg)
 
         return True
@@ -2568,141 +2551,3 @@ class Metric:
     def extra_attr(self, extra_attr: dict):
         """Set the unit of the metric."""
         self._extra_attr = extra_attr
-
-
-def _service_charge_point(hass: HomeAssistant, service_call) -> ChargePoint | None:
-    """Resolve one connected charger for a domain-level Home Assistant action."""
-    requested_cp_id = service_call.data.get(CONF_CPID)
-    candidates = []
-    for runtime in hass.data.get(DOMAIN, {}).values():
-        if not isinstance(runtime, CentralSystem):
-            continue
-        if requested_cp_id is not None and runtime.cpid != requested_cp_id:
-            continue
-        charge_point = runtime.charge_points.get(runtime.cpid)
-        if charge_point is not None and charge_point.status != STATE_UNAVAILABLE:
-            candidates.append(charge_point)
-
-    if len(candidates) == 1:
-        return candidates[0]
-    if requested_cp_id is not None and not candidates:
-        _LOGGER.warning("OCPP charger '%s' is not connected", requested_cp_id)
-        return None
-    if not candidates:
-        _LOGGER.warning("No OCPP charger is connected")
-        return None
-    raise HomeAssistantError(
-        "Multiple OCPP chargers are connected; specify the cpid field"
-    )
-
-
-async def async_setup_charge_point_services(hass: HomeAssistant) -> None:
-    """Register charger actions once and route them by configured cpid."""
-    if hass.services.has_service(DOMAIN, csvcs.service_configure.value):
-        return
-
-    async def handle_clear_profile(service_call):
-        if (charge_point := _service_charge_point(hass, service_call)) is not None:
-            await charge_point.clear_profile()
-
-    async def handle_update_firmware(service_call):
-        charge_point = _service_charge_point(hass, service_call)
-        if charge_point is None:
-            return
-        await charge_point.update_firmware(
-            service_call.data["firmware_url"],
-            int(service_call.data.get("delay_hours", 0)),
-        )
-
-    async def handle_configure(service_call):
-        charge_point = _service_charge_point(hass, service_call)
-        if charge_point is None:
-            return
-        await charge_point.configure(
-            service_call.data["ocpp_key"], service_call.data["value"]
-        )
-
-    async def handle_get_configuration(service_call):
-        if (charge_point := _service_charge_point(hass, service_call)) is not None:
-            await charge_point.get_configuration(service_call.data["ocpp_key"])
-
-    async def handle_get_diagnostics(service_call):
-        if (charge_point := _service_charge_point(hass, service_call)) is not None:
-            await charge_point.get_diagnostics(service_call.data["upload_url"])
-
-    async def handle_data_transfer(service_call):
-        charge_point = _service_charge_point(hass, service_call)
-        if charge_point is None:
-            return
-        await charge_point.data_transfer(
-            service_call.data["vendor_id"],
-            service_call.data.get("message_id", ""),
-            service_call.data.get("data", ""),
-        )
-
-    async def handle_set_charge_rate(service_call):
-        charge_point = _service_charge_point(hass, service_call)
-        if charge_point is None:
-            return
-        connector_id = service_call.data.get("conn_id", 0)
-        custom_profile = service_call.data.get("custom_profile")
-        if isinstance(custom_profile, str):
-            custom_profile = json.loads(custom_profile.replace("'", '"'))
-        if custom_profile is not None:
-            await charge_point.set_charge_rate(
-                profile=custom_profile, conn_id=connector_id
-            )
-        elif "limit_watts" in service_call.data:
-            await charge_point.set_charge_rate(
-                limit_watts=service_call.data["limit_watts"],
-                conn_id=connector_id,
-            )
-        elif "limit_amps" in service_call.data:
-            await charge_point.set_charge_rate(
-                limit_amps=service_call.data["limit_amps"],
-                conn_id=connector_id,
-            )
-        else:
-            raise HomeAssistantError(
-                "Specify limit_amps, limit_watts, or custom_profile"
-            )
-
-    hass.services.async_register(
-        DOMAIN,
-        csvcs.service_configure.value,
-        handle_configure,
-        CONF_SERVICE_DATA_SCHEMA,
-    )
-    hass.services.async_register(
-        DOMAIN,
-        csvcs.service_get_configuration.value,
-        handle_get_configuration,
-        GCONF_SERVICE_DATA_SCHEMA,
-    )
-    hass.services.async_register(
-        DOMAIN,
-        csvcs.service_data_transfer.value,
-        handle_data_transfer,
-        TRANS_SERVICE_DATA_SCHEMA,
-    )
-    hass.services.async_register(
-        DOMAIN, csvcs.service_clear_profile.value, handle_clear_profile
-    )
-    hass.services.async_register(
-        DOMAIN,
-        csvcs.service_set_charge_rate.value,
-        handle_set_charge_rate,
-        CHRGR_SERVICE_DATA_SCHEMA,
-    )
-    hass.services.async_register(
-        DOMAIN,
-        csvcs.service_update_firmware.value,
-        handle_update_firmware,
-        UFW_SERVICE_DATA_SCHEMA,
-    )
-    hass.services.async_register(
-        DOMAIN,
-        csvcs.service_get_diagnostics.value,
-        handle_get_diagnostics,
-        GDIAG_SERVICE_DATA_SCHEMA,
-    )

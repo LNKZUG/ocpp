@@ -3,7 +3,7 @@
         "step": {
             "user": {
                 "title": "OCPP-Konfiguration",
-                "description": "Konfiguriere die Verbindung zum OCPP-Zentralsystem.",
+                "description": "Wenn du Hilfe bei der Konfiguration benötigst, schaue hier nach: https://github.com/lbbrhzn/ocpp",
                 "data": {
                     "host": "Host-Adresse des Zentralsystems",
                     "port": "Portnummer des Zentralsystems",
@@ -95,8 +95,36 @@
             "rpm": {"name": "RPM"},
             "serial": {"name": "Seriennummer"},
             "soc": {"name": "Ladezustand"},
-            "status": {"name": "Status"},
-            "status_connector": {"name": "Status Anschluss"},
+            "status": {
+                "name": "Status",
+                "state": {
+                    "Available": "Bereit",
+                    "Unavailable": "Gesperrt",
+                    "Finishing": "Ladevorgang wird abgeschlossen",
+                    "Charging": "Ladevorgang läuft",
+                    "SuspendedEV": "Ladevorgang durch Fahrzeug ausgesetzt",
+                    "SuspendedEVSE": "Ladevorgang durch Wallbox ausgesetzt",
+                    "Preparing": "Ladevorgang wird vorbereitet",
+                    "Reserved": "Reserviert",
+                    "Faulted": "Fehler",
+                    "PriceOptimizedChargingPaused": "Pausiert aufgrund strompreisoptimiertem Laden"
+                }
+            },
+            "status_connector": {
+                "name": "Status Anschluss",
+                "state": {
+                    "Available": "Bereit",
+                    "Unavailable": "Gesperrt",
+                    "Finishing": "Ladevorgang wird abgeschlossen",
+                    "Charging": "Ladevorgang läuft",
+                    "SuspendedEV": "Ladevorgang durch Fahrzeug ausgesetzt",
+                    "SuspendedEVSE": "Ladevorgang durch Wallbox ausgesetzt",
+                    "Preparing": "Ladevorgang wird vorbereitet",
+                    "Reserved": "Reserviert",
+                    "Faulted": "Fehler",
+                    "PriceOptimizedChargingPaused": "Pausiert aufgrund strompreisoptimiertem Laden"
+                }
+            },
             "status_firmware": {"name": "Firmwarestatus"},
             "stop_reason": {"name": "Stoppgrund"},
             "temperature": {"name": "Temperatur"},

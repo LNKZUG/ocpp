@@ -71,11 +71,6 @@ set_charge_rate:
   #     integration: ocpp
   # Different fields that your service accepts
   fields:
-    cpid:
-      name: Wallbox ID
-      description: Required when more than one OCPP wallbox is connected.
-      required: false
-      example: "charger_garage"
     # Key of the field
     limit_amps:
       # Field name as shown in UI
@@ -114,22 +109,11 @@ set_charge_rate:
 clear_profile:
   name: Clear charging profiles
   description: Clears all charging profiles (limits) set (dependent on charger support)
-  fields:
-    cpid:
-      name: Wallbox ID
-      description: Required when more than one OCPP wallbox is connected.
-      required: false
-      example: "charger_garage"
 
 update_firmware:
   name: Update charger firmware
   description: Specify server to download firmware and time to delay updating (dependent on charger support), supported transfer protocols can be requested by the configuration key SupportedFileTransferProtocols
   fields:
-    cpid:
-      name: Wallbox ID
-      description: Required when more than one OCPP wallbox is connected.
-      required: false
-      example: "charger_garage"
     firmware_url:
       name: Url of firmware
       description: Full url of firmware file (http or https)
@@ -148,11 +132,6 @@ configure:
   name: Configure charger features
   description: Change supported Ocpp v1.6 configuration values
   fields:
-    cpid:
-      name: Wallbox ID
-      description: Required when more than one OCPP wallbox is connected.
-      required: false
-      example: "charger_garage"
     ocpp_key:
       name: Configuration key name 
       description: Write-enabled key name supported 
@@ -170,11 +149,6 @@ get_configuration:
   name: Get configuration values for charger
   description: Change supported Ocpp v1.6 configuration values
   fields:
-    cpid:
-      name: Wallbox ID
-      description: Required when more than one OCPP wallbox is connected.
-      required: false
-      example: "charger_garage"
     ocpp_key:
       name: Configuration key name 
       description: Key name supported 
@@ -186,11 +160,6 @@ get_diagnostics:
   name: Request diagnostic data from charger
   description: Specify server url to upload diagnostic data to (dependent on charger support), supported transfer protocols can be requested by the configuration key SupportedFileTransferProtocols
   fields:
-    cpid:
-      name: Wallbox ID
-      description: Required when more than one OCPP wallbox is connected.
-      required: false
-      example: "charger_garage"
     upload_url:
       name: Url for upload
       description: Full url to upload to
@@ -202,11 +171,6 @@ data_transfer:
   name: Request data transfer from charger
   description: Note this is specific to charger, see manufacturer's documentation
   fields:
-    cpid:
-      name: Wallbox ID
-      description: Required when more than one OCPP wallbox is connected.
-      required: false
-      example: "charger_garage"
     vendor_id:
       name: vendorId
       description: Defined by charger manufacturer

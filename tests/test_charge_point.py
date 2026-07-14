@@ -12,21 +12,20 @@ from homeassistant.components.switch import (
     SERVICE_TURN_OFF,
     SERVICE_TURN_ON,
 )
-from homeassistant.const import ATTR_ENTITY_ID, STATE_OK
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.const import ATTR_ENTITY_ID
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 import websockets
 
+from custom_components.ocpp import async_setup_entry, async_unload_entry
 import custom_components.ocpp.api as ocpp_api
 from custom_components.ocpp.api import (
-    PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED,
-    PRICE_OPTIMIZED_CHARGE_MODE_STANDARD,
-    PRICE_PAUSE_PROFILE_ID,
     CentralSystem,
     ChargePoint as OcppChargePoint,
     Metric,
-    _service_charge_point,
+    PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED,
+    PRICE_OPTIMIZED_CHARGE_MODE_STANDARD,
+    PRICE_PAUSE_PROFILE_ID,
     truncate_status_notification_info,
 )
 from custom_components.ocpp.button import BUTTONS
@@ -34,13 +33,13 @@ from custom_components.ocpp.const import CONF_ENERGY_PRICE_SENSOR, DOMAIN as OCP
 from custom_components.ocpp.enums import (
     ConfigurationKey,
     HAChargerDetails as cdet,
-    HAChargerServices as csvcs,
     HAChargerSession as csess,
     HAChargerStatuses as cstat,
+    HAChargerServices as csvcs,
     Profiles as prof,
 )
 from custom_components.ocpp.number import NUMBERS
-from custom_components.ocpp.switch import SWITCHES, ChargePointSwitch
+from custom_components.ocpp.switch import ChargePointSwitch, SWITCHES
 from ocpp.routing import on
 from ocpp.v16 import ChargePoint as cpclass, call, call_result
 from ocpp.v16.enums import (
@@ -55,7 +54,6 @@ from ocpp.v16.enums import (
     DataTransferStatus,
     DiagnosticsStatus,
     FirmwareStatus,
-    Measurand,
     RegistrationStatus,
     RemoteStartStopStatus,
     ResetStatus,
@@ -63,6 +61,7 @@ from ocpp.v16.enums import (
     TriggerMessageStatus,
     UnitOfMeasure,
     UnlockStatus,
+    Measurand,
 )
 
 from .const import MOCK_CONFIG_DATA, MOCK_CONFIG_DATA_2
@@ -91,7 +90,9 @@ def test_truncate_status_notification_info():
     """Test non-compliant StatusNotification info values are trimmed."""
     payload = {"info": "H8.Charge station gun signal is error, please reinsert"}
 
-    assert truncate_status_notification_info(Action.status_notification.value, payload)
+    assert truncate_status_notification_info(
+        Action.status_notification.value, payload
+    )
     assert payload["info"] == "H8.Charge station gun signal is error, please rein"
     assert len(payload["info"]) == 50
 
@@ -116,9 +117,9 @@ async def test_evse_suspended_auto_stop_sends_remote_stop():
     charge_point.id = "test_cpid"
     charge_point.hass = SimpleNamespace(async_create_task=asyncio.create_task)
     charge_point._metrics = defaultdict(lambda: Metric(None, None))
-    charge_point._metrics[
-        cstat.status_connector.value
-    ].value = ChargePointStatus.suspended_evse.value
+    charge_point._metrics[cstat.status_connector.value].value = (
+        ChargePointStatus.suspended_evse.value
+    )
     charge_point._metrics[Measurand.power_active_import.value].value = 0
     charge_point._metrics[Measurand.current_import.value].value = 0
     charge_point.active_transaction_id = 123
@@ -150,9 +151,9 @@ async def test_price_optimized_pause_skips_evse_suspended_auto_stop():
     charge_point.id = "test_cpid"
     charge_point.hass = SimpleNamespace(async_create_task=asyncio.create_task)
     charge_point._metrics = defaultdict(lambda: Metric(None, None))
-    charge_point._metrics[
-        cstat.status_connector.value
-    ].value = ChargePointStatus.suspended_evse.value
+    charge_point._metrics[cstat.status_connector.value].value = (
+        ChargePointStatus.suspended_evse.value
+    )
     charge_point._metrics[Measurand.power_active_import.value].value = 0
     charge_point._metrics[Measurand.current_import.value].value = 0
     charge_point.active_transaction_id = 123
@@ -188,9 +189,9 @@ async def test_price_optimized_pause_cancels_pending_evse_auto_stop():
     charge_point = object.__new__(OcppChargePoint)
     charge_point.id = "test_cpid"
     charge_point._metrics = defaultdict(lambda: Metric(None, None))
-    charge_point._metrics[
-        cstat.status_connector.value
-    ].value = ChargePointStatus.suspended_evse.value
+    charge_point._metrics[cstat.status_connector.value].value = (
+        ChargePointStatus.suspended_evse.value
+    )
     charge_point._metrics[Measurand.power_active_import.value].value = 0
     charge_point._metrics[Measurand.current_import.value].value = 0
     charge_point.active_transaction_id = 123
@@ -239,9 +240,9 @@ async def test_pending_remote_start_cleanup_unlocks_and_refreshes(monkeypatch):
     charge_point.id = "test_cpid"
     charge_point.hass = SimpleNamespace(async_create_task=asyncio.create_task)
     charge_point._metrics = defaultdict(lambda: Metric(None, None))
-    charge_point._metrics[
-        cstat.status_connector.value
-    ].value = ChargePointStatus.preparing.value
+    charge_point._metrics[cstat.status_connector.value].value = (
+        ChargePointStatus.preparing.value
+    )
     charge_point.active_transaction_id = 0
     charge_point._remote_start_cleanup_task = None
     charge_point.unlock = unlock
@@ -294,9 +295,9 @@ async def test_pending_remote_start_cleanup_keeps_user_while_waiting_for_price(
         get_price_optimized_charging_allowed=lambda _cpid: False,
     )
     charge_point._metrics = defaultdict(lambda: Metric(None, None))
-    charge_point._metrics[
-        cstat.status_connector.value
-    ].value = ChargePointStatus.preparing.value
+    charge_point._metrics[cstat.status_connector.value].value = (
+        ChargePointStatus.preparing.value
+    )
     charge_point._metrics[cstat.id_tag.value].value = "ABC"
     charge_point._metrics[csess.current_user.value].value = "Lukas"
     charge_point._metrics[csess.current_user.value].extra_attr = {
@@ -466,27 +467,10 @@ def test_current_user_metric_maps_id_tag_to_managed_user():
     assert charge_point._metrics[csess.session_time.value].value is None
     assert charge_point._price_pause_profile_applied is False
     assert charge_point._metrics[csess.monthly_energy.value].value == 1.0
-    assert (
-        charge_point._metrics[csess.monthly_energy.value].extra_attr["reset_cycle"]
-        == "monthly"
-    )
+    assert charge_point._metrics[csess.monthly_energy.value].extra_attr[
+        "reset_cycle"
+    ] == "monthly"
     assert charge_point.central.user_registry.stop_recorded is True
-
-
-def test_stale_stop_transaction_does_not_clear_active_transaction():
-    """Test a delayed stop cannot terminate a newer active transaction."""
-    charge_point = object.__new__(OcppChargePoint)
-    charge_point.active_transaction_id = 202
-
-    result = charge_point.on_stop_transaction(
-        meter_stop=2000,
-        timestamp=datetime.now(tz=timezone.utc).isoformat(),
-        transaction_id=101,
-    )
-
-    assert result.id_tag_info["status"] == AuthorizationStatus.accepted.value
-    assert charge_point.active_transaction_id == 202
-    assert charge_point._stopped_transaction_ids == {101}
 
 
 def test_central_system_reads_energy_price_sensor_as_eur_per_kwh():
@@ -502,111 +486,15 @@ def test_central_system_reads_energy_price_sensor_as_eur_per_kwh():
         options={CONF_ENERGY_PRICE_SENSOR: "sensor.energy_price"},
         data={},
     )
-    central.hass = SimpleNamespace(states=SimpleNamespace(get=lambda entity_id: state))
+    central.hass = SimpleNamespace(
+        states=SimpleNamespace(get=lambda entity_id: state)
+    )
 
     assert central.get_energy_price_sensor_entity_id("charger") == (
         "sensor.energy_price"
     )
     assert central.get_current_energy_price("charger") == 0.315
     assert central.get_current_energy_price("other") is None
-
-
-@pytest.mark.parametrize(
-    ("unit", "state_value", "expected"),
-    [
-        ("EUR/MWh", "315", 0.315),
-        ("€/kWh", "0.315", 0.315),
-        ("USD/kWh", "0.315", None),
-        ("", "0.315", None),
-    ],
-)
-def test_energy_price_sensor_requires_and_normalizes_supported_units(
-    unit, state_value, expected
-):
-    """Test price values cannot silently use the wrong energy unit."""
-    state = SimpleNamespace(
-        state=state_value,
-        attributes={"unit_of_measurement": unit},
-    )
-    central = object.__new__(CentralSystem)
-    central.cpid = "charger"
-    central.entry = SimpleNamespace(
-        options={CONF_ENERGY_PRICE_SENSOR: "sensor.energy_price"},
-        data={},
-    )
-    central.hass = SimpleNamespace(states=SimpleNamespace(get=lambda entity_id: state))
-
-    assert central.get_current_energy_price("charger") == expected
-
-
-async def test_charge_state_migration_keeps_each_entry_isolated():
-    """Test legacy shared state is copied only for this entry's wallbox."""
-
-    class StoreStub:
-        def __init__(self, loaded):
-            self.loaded = loaded
-            self.saved = None
-
-        async def async_load(self):
-            return self.loaded
-
-        async def async_save(self, data):
-            self.saved = data
-
-    central = object.__new__(CentralSystem)
-    central.cpid = "garage"
-    central._charge_state_store = StoreStub(None)
-    central._legacy_charge_state_store = StoreStub(
-        {
-            "selected_user_ids": {"garage": "lukas", "carport": "alex"},
-            "charge_modes": {
-                "garage": PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED,
-                "carport": PRICE_OPTIMIZED_CHARGE_MODE_STANDARD,
-            },
-            "price_optimized_charging_allowed": {
-                "garage": False,
-                "carport": True,
-            },
-        }
-    )
-
-    await central.async_load_charge_state()
-
-    assert central.selected_user_ids == {"garage": "lukas"}
-    assert central.charge_modes == {"garage": PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED}
-    assert central.price_optimized_charging_allowed == {"garage": False}
-    assert central._charge_state_store.saved == {
-        "selected_user_ids": {"garage": "lukas"},
-        "charge_modes": {"garage": PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED},
-        "price_optimized_charging_allowed": {"garage": False},
-    }
-
-
-def test_charger_services_route_to_configured_wallbox_id():
-    """Test domain services do not leak to another CentralSystem instance."""
-    garage_charge_point = SimpleNamespace(status=STATE_OK)
-    carport_charge_point = SimpleNamespace(status=STATE_OK)
-    garage = object.__new__(CentralSystem)
-    garage.cpid = "garage"
-    garage.charge_points = {"garage": garage_charge_point}
-    carport = object.__new__(CentralSystem)
-    carport.cpid = "carport"
-    carport.charge_points = {"carport": carport_charge_point}
-    hass = SimpleNamespace(
-        data={
-            OCPP_DOMAIN: {
-                "garage_entry": garage,
-                "carport_entry": carport,
-            }
-        }
-    )
-
-    assert (
-        _service_charge_point(hass, SimpleNamespace(data={"cpid": "garage"}))
-        is garage_charge_point
-    )
-    with pytest.raises(HomeAssistantError, match="Multiple OCPP chargers"):
-        _service_charge_point(hass, SimpleNamespace(data={}))
 
 
 def test_meter_values_add_live_user_session_energy():
@@ -1018,7 +906,9 @@ def test_remote_start_for_user_uses_managed_user_id_tag():
     central_system.user_registry = UserRegistryStub()
     central_system.charge_points = {"charger": charge_point}
 
-    result = asyncio.run(central_system.start_transaction_for_user("charger", "lukas"))
+    result = asyncio.run(
+        central_system.start_transaction_for_user("charger", "lukas")
+    )
 
     assert result is True
     assert charge_point.started_id_tag == "ABC"
@@ -1119,8 +1009,6 @@ def test_charge_state_save_persists_controls():
         "selected_user_ids": {"charger": "lukas"},
         "charge_modes": {"charger": PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED},
         "price_optimized_charging_allowed": {"charger": False},
-        "auto_stop_on_evse_suspended": {},
-        "auto_stop_delays": {},
     }
 
 
@@ -1152,7 +1040,9 @@ def test_charge_state_changes_schedule_persistence():
 
     assert central_system.set_selected_user("charger", "lukas")
     assert asyncio.run(
-        central_system.set_charge_mode("charger", PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED)
+        central_system.set_charge_mode(
+            "charger", PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED
+        )
     )
     assert asyncio.run(
         central_system.set_price_optimized_charging_allowed("charger", False)
@@ -1181,7 +1071,7 @@ async def test_price_optimized_mode_pauses_and_resumes_only_when_enabled():
             self.paused += 1
             return True
 
-        async def resume_price_optimized_charging(self, force=False):
+        async def resume_price_optimized_charging(self):
             """Record resume calls."""
             self.resumed += 1
             return True
@@ -1192,7 +1082,9 @@ async def test_price_optimized_mode_pauses_and_resumes_only_when_enabled():
     central_system.price_optimized_charging_allowed = {}
     central_system.charge_points = {"charger": charge_point}
 
-    assert await central_system.set_price_optimized_charging_allowed("charger", False)
+    assert await central_system.set_price_optimized_charging_allowed(
+        "charger", False
+    )
     assert charge_point.paused == 0
 
     assert await central_system.set_charge_mode(
@@ -1215,7 +1107,7 @@ async def test_price_optimized_mode_stays_paused_when_resume_fails():
     class ChargePointStub:
         """Minimal charge point test double."""
 
-        async def resume_price_optimized_charging(self, force=False):
+        async def resume_price_optimized_charging(self):
             """Reject resume."""
             return False
 
@@ -1224,12 +1116,9 @@ async def test_price_optimized_mode_stays_paused_when_resume_fails():
     central_system.price_optimized_charging_allowed = {"charger": False}
     central_system.charge_points = {"charger": ChargePointStub()}
 
-    assert (
-        await central_system.set_charge_mode(
-            "charger", PRICE_OPTIMIZED_CHARGE_MODE_STANDARD
-        )
-        is False
-    )
+    assert await central_system.set_charge_mode(
+        "charger", PRICE_OPTIMIZED_CHARGE_MODE_STANDARD
+    ) is False
     assert central_system.get_charge_mode("charger") == (
         PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED
     )
@@ -1245,7 +1134,7 @@ async def test_price_optimized_switch_state_changes_only_after_success():
             """Reject pause."""
             return False
 
-        async def resume_price_optimized_charging(self, force=False):
+        async def resume_price_optimized_charging(self):
             """Reject resume."""
             return False
 
@@ -1254,18 +1143,16 @@ async def test_price_optimized_switch_state_changes_only_after_success():
     central_system.price_optimized_charging_allowed = {"charger": True}
     central_system.charge_points = {"charger": ChargePointStub()}
 
-    assert (
-        await central_system.set_price_optimized_charging_allowed("charger", False)
-        is False
-    )
+    assert await central_system.set_price_optimized_charging_allowed(
+        "charger", False
+    ) is False
     assert central_system.get_price_optimized_charging_allowed("charger") is True
 
     central_system.price_optimized_charging_allowed["charger"] = False
 
-    assert (
-        await central_system.set_price_optimized_charging_allowed("charger", True)
-        is False
-    )
+    assert await central_system.set_price_optimized_charging_allowed(
+        "charger", True
+    ) is False
     assert central_system.get_price_optimized_charging_allowed("charger") is False
 
 
@@ -1621,20 +1508,6 @@ def test_active_session_restores_from_latest_persisted_session():
 async def test_cms_responses(hass, socket_enabled):
     """Test central system responses to a charger."""
 
-    async def run_client_sequence(client, *operations, timeout=20):
-        """Run one client receiver while sending OCPP operations in order."""
-
-        async def run_operations():
-            for operation in operations:
-                await operation()
-
-        client_task = asyncio.create_task(client.start())
-        try:
-            await asyncio.wait_for(run_operations(), timeout=timeout)
-        finally:
-            client_task.cancel()
-            await asyncio.gather(client_task, return_exceptions=True)
-
     async def test_switches(hass, socket_enabled):
         """Test switch operations."""
         for switch in SWITCHES:
@@ -1909,21 +1782,28 @@ async def test_cms_responses(hass, socket_enabled):
     ) as ws:
         # use a different id for debugging
         cp = ChargePoint("CP_1_normal", ws)
-        await run_client_sequence(
-            cp,
-            cp.send_boot_notification,
-            cp.send_authorize,
-            cp.send_heartbeat,
-            cp.send_status_notification,
-            cp.send_security_event,
-            cp.send_firmware_status,
-            cp.send_data_transfer,
-            lambda: cp.send_start_transaction(12345),
-            cp.send_meter_err_phases,
-            cp.send_meter_line_voltage,
-            cp.send_meter_periodic_data,
-            lambda: cp.send_stop_transaction(1),
-        )
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(
+                    cp.start(),
+                    cp.send_boot_notification(),
+                    cp.send_authorize(),
+                    cp.send_heartbeat(),
+                    cp.send_status_notification(),
+                    cp.send_security_event(),
+                    cp.send_firmware_status(),
+                    cp.send_data_transfer(),
+                    cp.send_start_transaction(12345),
+                    cp.send_meter_err_phases(),
+                    cp.send_meter_line_voltage(),
+                    cp.send_meter_periodic_data(),
+                    # add delay to allow meter data to be processed
+                    cp.send_stop_transaction(1),
+                ),
+                timeout=5,
+            )
+        except asyncio.TimeoutError:
+            pass
         await ws.close()
     assert int(cs.get_metric("test_cpid", "Energy.Active.Import.Register")) == int(
         1305570 / 1000
@@ -1961,15 +1841,21 @@ async def test_cms_responses(hass, socket_enabled):
         subprotocols=["ocpp1.6"],
     ) as ws:
         cp = ChargePoint("CP_1_services", ws)
-        await run_client_sequence(
-            cp,
-            cs.charge_points[cs.cpid].trigger_boot_notification,
-            cs.charge_points[cs.cpid].trigger_status_notification,
-            lambda: test_switches(hass, socket_enabled),
-            lambda: test_services(hass, socket_enabled),
-            lambda: test_buttons(hass, socket_enabled),
-            cp.send_meter_clock_data,
-        )
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(
+                    cp.start(),
+                    cs.charge_points[cs.cpid].trigger_boot_notification(),
+                    cs.charge_points[cs.cpid].trigger_status_notification(),
+                    test_switches(hass, socket_enabled),
+                    test_services(hass, socket_enabled),
+                    test_buttons(hass, socket_enabled),
+                    cp.send_meter_clock_data(),
+                ),
+                timeout=5,
+            )
+        except asyncio.TimeoutError:
+            pass
         await ws.close()
     assert int(cs.get_metric("test_cpid", "Frequency")) == int(50)
     assert float(cs.get_metric("test_cpid", "Energy.Active.Import.Register")) == float(
@@ -1987,13 +1873,20 @@ async def test_cms_responses(hass, socket_enabled):
     ) as ws:
         # use a different id for debugging
         cp = ChargePoint("CP_1_non_errata_3.9", ws)
-        await run_client_sequence(
-            cp,
-            lambda: cp.send_start_transaction(0),
-            cp.send_meter_periodic_data,
-            cp.send_main_meter_clock_data,
-            lambda: cp.send_stop_transaction(1),
-        )
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(
+                    cp.start(),
+                    cp.send_start_transaction(0),
+                    cp.send_meter_periodic_data(),
+                    cp.send_main_meter_clock_data(),
+                    # add delay to allow meter data to be processed
+                    cp.send_stop_transaction(1),
+                ),
+                timeout=5,
+            )
+        except asyncio.TimeoutError:
+            pass
         await ws.close()
 
     # Last sent "Energy.Active.Import.Register" value without transaction id should be here.
@@ -2015,13 +1908,20 @@ async def test_cms_responses(hass, socket_enabled):
     ) as ws:
         # use a different id for debugging
         cp = ChargePoint("CP_1_non_errata_3.9", ws)
-        await run_client_sequence(
-            cp,
-            lambda: cp.send_start_transaction(0),
-            cp.send_meter_energy_kwh,
-            cp.send_meter_clock_data,
-            lambda: cp.send_stop_transaction(1),
-        )
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(
+                    cp.start(),
+                    cp.send_start_transaction(0),
+                    cp.send_meter_energy_kwh(),
+                    cp.send_meter_clock_data(),
+                    # add delay to allow meter data to be processed
+                    cp.send_stop_transaction(1),
+                ),
+                timeout=5,
+            )
+        except asyncio.TimeoutError:
+            pass
         await ws.close()
 
     assert int(cs.get_metric("test_cpid", "Energy.Active.Import.Register")) == int(1101)
@@ -2063,7 +1963,7 @@ async def test_cms_responses(hass, socket_enabled):
         subprotocols=["ocpp1.6"],
     ) as ws:
         cp = ChargePoint("CP_3_test", ws)
-        ws.protocol.state = websockets.protocol.State.CLOSED
+        ws.state = 3  # CLOSED = 3
         await asyncio.sleep(3)
         await ws.close()
 

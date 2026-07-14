@@ -3,7 +3,7 @@
         "step": {
             "user": {
                 "title": "OCPP Configuration",
-                "description": "Configure the connection to the OCPP central system.",
+                "description": "If you need help with the configuration have a look here: https://github.com/lbbrhzn/ocpp",
                 "data": {
                     "host": "Central system host address",
                     "port": "Central system port number",
@@ -98,8 +98,36 @@
             "rpm": {"name": "RPM"},
             "serial": {"name": "Serial"},
             "soc": {"name": "SoC"},
-            "status": {"name": "Status"},
-            "status_connector": {"name": "Status Connector"},
+            "status": {
+                "name": "Status",
+                "state": {
+                    "Available": "Available",
+                    "Unavailable": "Unavailable",
+                    "Finishing": "Finishing",
+                    "Charging": "Charging",
+                    "SuspendedEV": "Suspended by vehicle",
+                    "SuspendedEVSE": "Suspended by charger",
+                    "Preparing": "Preparing",
+                    "Reserved": "Reserved",
+                    "Faulted": "Faulted",
+                    "PriceOptimizedChargingPaused": "Paused by price optimized charging"
+                }
+            },
+            "status_connector": {
+                "name": "Status Connector",
+                "state": {
+                    "Available": "Available",
+                    "Unavailable": "Unavailable",
+                    "Finishing": "Finishing",
+                    "Charging": "Charging",
+                    "SuspendedEV": "Suspended by vehicle",
+                    "SuspendedEVSE": "Suspended by charger",
+                    "Preparing": "Preparing",
+                    "Reserved": "Reserved",
+                    "Faulted": "Faulted",
+                    "PriceOptimizedChargingPaused": "Paused by price optimized charging"
+                }
+            },
             "status_firmware": {"name": "Status Firmware"},
             "stop_reason": {"name": "Stop Reason"},
             "temperature": {"name": "Temperature"},
