@@ -64,12 +64,12 @@
         "sensor": {
             "status": {
                 "state": {
-                    "PriceOptimizedChargingPaused": "Paused by price optimized charging"
+                    "price_optimized_charging_paused": "Paused by price optimized charging"
                 }
             },
             "status_connector": {
                 "state": {
-                    "PriceOptimizedChargingPaused": "Paused by price optimized charging"
+                    "price_optimized_charging_paused": "Paused by price optimized charging"
                 }
             }
         },

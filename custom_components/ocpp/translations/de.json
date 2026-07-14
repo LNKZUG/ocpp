@@ -98,31 +98,31 @@
             "status": {
                 "name": "Status",
                 "state": {
-                    "Available": "Bereit",
-                    "Unavailable": "Gesperrt",
-                    "Finishing": "Ladevorgang wird abgeschlossen",
-                    "Charging": "Ladevorgang läuft",
-                    "SuspendedEV": "Ladevorgang durch Fahrzeug ausgesetzt",
-                    "SuspendedEVSE": "Ladevorgang durch Wallbox ausgesetzt",
-                    "Preparing": "Ladevorgang wird vorbereitet",
-                    "Reserved": "Reserviert",
-                    "Faulted": "Fehler",
-                    "PriceOptimizedChargingPaused": "Pausiert aufgrund strompreisoptimiertem Laden"
+                    "available": "Bereit",
+                    "unavailable": "Gesperrt",
+                    "finishing": "Ladevorgang wird abgeschlossen",
+                    "charging": "Ladevorgang läuft",
+                    "suspended_ev": "Ladevorgang durch Fahrzeug ausgesetzt",
+                    "suspended_evse": "Ladevorgang durch Wallbox ausgesetzt",
+                    "preparing": "Ladevorgang wird vorbereitet",
+                    "reserved": "Reserviert",
+                    "faulted": "Fehler",
+                    "price_optimized_charging_paused": "Pausiert aufgrund strompreisoptimiertem Laden"
                 }
             },
             "status_connector": {
                 "name": "Status Anschluss",
                 "state": {
-                    "Available": "Bereit",
-                    "Unavailable": "Gesperrt",
-                    "Finishing": "Ladevorgang wird abgeschlossen",
-                    "Charging": "Ladevorgang läuft",
-                    "SuspendedEV": "Ladevorgang durch Fahrzeug ausgesetzt",
-                    "SuspendedEVSE": "Ladevorgang durch Wallbox ausgesetzt",
-                    "Preparing": "Ladevorgang wird vorbereitet",
-                    "Reserved": "Reserviert",
-                    "Faulted": "Fehler",
-                    "PriceOptimizedChargingPaused": "Pausiert aufgrund strompreisoptimiertem Laden"
+                    "available": "Bereit",
+                    "unavailable": "Gesperrt",
+                    "finishing": "Ladevorgang wird abgeschlossen",
+                    "charging": "Ladevorgang läuft",
+                    "suspended_ev": "Ladevorgang durch Fahrzeug ausgesetzt",
+                    "suspended_evse": "Ladevorgang durch Wallbox ausgesetzt",
+                    "preparing": "Ladevorgang wird vorbereitet",
+                    "reserved": "Reserviert",
+                    "faulted": "Fehler",
+                    "price_optimized_charging_paused": "Pausiert aufgrund strompreisoptimiertem Laden"
                 }
             },
             "status_firmware": {"name": "Firmwarestatus"},
@@ -177,9 +177,10 @@
             },
             "settings": {
                 "title": "OCPP Nutzer-Einstellungen",
+                "description": "Wähle hier den eigentlichen Strompreis pro Energieeinheit. Erlaubt sind Sensoren mit EUR/kWh, ct/kWh oder EUR/MWh. Sensoren mit EUR/h zeigen laufende Kosten und sind dafür nicht geeignet.",
                 "data": {
                     "default_authorization_status": "Standardstatus für unbekannte idTags",
-                    "energy_price_sensor": "Echtzeit-Strompreissensor"
+                    "energy_price_sensor": "Strompreissensor (EUR/kWh oder ct/kWh)"
                 }
             },
             "add_user": {
@@ -232,7 +233,8 @@
         },
         "error": {
             "invalid_user": "Name und mindestens ein idTag sind erforderlich.",
-            "duplicate_id_tag": "Mindestens ein idTag ist bereits einem anderen Nutzer zugeordnet."
+            "duplicate_id_tag": "Mindestens ein idTag ist bereits einem anderen Nutzer zugeordnet.",
+            "invalid_energy_price_sensor_unit": "Der gewählte Sensor muss einen Strompreis in EUR/kWh, ct/kWh oder EUR/MWh liefern. EUR/h ist eine Kostenrate und kann nicht verwendet werden."
         },
         "abort": {
             "no_users": "Es wurden noch keine OCPP Nutzer angelegt.",

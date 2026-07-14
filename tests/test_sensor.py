@@ -206,8 +206,26 @@ def test_status_sensor_reflects_price_optimized_pause():
         ),
     )
 
-    assert PRICE_OPTIMIZED_CHARGE_STATUS in entity.options
-    assert entity.native_value == PRICE_OPTIMIZED_CHARGE_STATUS
+    assert "price_optimized_charging_paused" in entity.options
+    assert entity.native_value == "price_optimized_charging_paused"
+
+
+def test_status_sensor_exposes_translatable_enum_key():
+    """Test raw OCPP states are converted to Home Assistant translation keys."""
+    entity = ChargePointMetric(
+        None,
+        CentralSystemStub({HAChargerStatuses.status_connector.value: "Charging"}),
+        "charger",
+        OcppSensorDescription(
+            key="status_connector",
+            name="Status Connector",
+            metric=HAChargerStatuses.status_connector.value,
+            translation_key="status_connector",
+        ),
+    )
+
+    assert entity.native_value == "charging"
+    assert "charging" in entity.options
 
 
 def test_user_entities_expose_user_details():

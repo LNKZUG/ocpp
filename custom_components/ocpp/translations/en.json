@@ -101,31 +101,31 @@
             "status": {
                 "name": "Status",
                 "state": {
-                    "Available": "Available",
-                    "Unavailable": "Unavailable",
-                    "Finishing": "Finishing",
-                    "Charging": "Charging",
-                    "SuspendedEV": "Suspended by vehicle",
-                    "SuspendedEVSE": "Suspended by charger",
-                    "Preparing": "Preparing",
-                    "Reserved": "Reserved",
-                    "Faulted": "Faulted",
-                    "PriceOptimizedChargingPaused": "Paused by price optimized charging"
+                    "available": "Available",
+                    "unavailable": "Unavailable",
+                    "finishing": "Finishing",
+                    "charging": "Charging",
+                    "suspended_ev": "Suspended by vehicle",
+                    "suspended_evse": "Suspended by charger",
+                    "preparing": "Preparing",
+                    "reserved": "Reserved",
+                    "faulted": "Faulted",
+                    "price_optimized_charging_paused": "Paused by price optimized charging"
                 }
             },
             "status_connector": {
                 "name": "Status Connector",
                 "state": {
-                    "Available": "Available",
-                    "Unavailable": "Unavailable",
-                    "Finishing": "Finishing",
-                    "Charging": "Charging",
-                    "SuspendedEV": "Suspended by vehicle",
-                    "SuspendedEVSE": "Suspended by charger",
-                    "Preparing": "Preparing",
-                    "Reserved": "Reserved",
-                    "Faulted": "Faulted",
-                    "PriceOptimizedChargingPaused": "Paused by price optimized charging"
+                    "available": "Available",
+                    "unavailable": "Unavailable",
+                    "finishing": "Finishing",
+                    "charging": "Charging",
+                    "suspended_ev": "Suspended by vehicle",
+                    "suspended_evse": "Suspended by charger",
+                    "preparing": "Preparing",
+                    "reserved": "Reserved",
+                    "faulted": "Faulted",
+                    "price_optimized_charging_paused": "Paused by price optimized charging"
                 }
             },
             "status_firmware": {"name": "Status Firmware"},
@@ -176,8 +176,10 @@
             },
             "settings": {
                 "title": "OCPP user settings",
+                "description": "Select the actual energy price per energy unit. Supported sensors use EUR/kWh, ct/kWh or EUR/MWh. Sensors using EUR/h represent a running cost and are not suitable.",
                 "data": {
-                    "default_authorization_status": "Default status for unknown idTags"
+                    "default_authorization_status": "Default status for unknown idTags",
+                    "energy_price_sensor": "Energy price sensor (EUR/kWh or ct/kWh)"
                 }
             },
             "add_user": {
@@ -230,7 +232,8 @@
         },
         "error": {
             "invalid_user": "Name and at least one idTag are required.",
-            "duplicate_id_tag": "At least one idTag is already assigned to another user."
+            "duplicate_id_tag": "At least one idTag is already assigned to another user.",
+            "invalid_energy_price_sensor_unit": "The selected sensor must provide an energy price in EUR/kWh, ct/kWh or EUR/MWh. EUR/h is a running cost and cannot be used."
         },
         "abort": {
             "no_users": "No OCPP users have been created yet.",

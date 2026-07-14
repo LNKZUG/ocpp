@@ -55,18 +55,20 @@ class OcppSensorDescription(SensorEntityDescription):
     enabled_default: bool = True
 
 
-STATUS_TRANSLATION_OPTIONS = [
-    "Available",
-    "Unavailable",
-    "Finishing",
-    "Charging",
-    "SuspendedEV",
-    "SuspendedEVSE",
-    "Preparing",
-    "Reserved",
-    "Faulted",
-    PRICE_OPTIMIZED_CHARGE_STATUS,
-]
+STATUS_TRANSLATION_KEYS = {
+    "Available": "available",
+    "Unavailable": "unavailable",
+    "Finishing": "finishing",
+    "Charging": "charging",
+    "SuspendedEV": "suspended_ev",
+    "SuspendedEVSE": "suspended_evse",
+    "Preparing": "preparing",
+    "Reserved": "reserved",
+    "Faulted": "faulted",
+    PRICE_OPTIMIZED_CHARGE_STATUS: "price_optimized_charging_paused",
+}
+
+STATUS_TRANSLATION_OPTIONS = list(STATUS_TRANSLATION_KEYS.values())
 
 
 def metric_translation_key(metric: str) -> str:
@@ -314,7 +316,9 @@ class ChargePointMetric(RestoreSensor, SensorEntity):
             HAChargerStatuses.status.value,
             HAChargerStatuses.status_connector.value,
         ) and self.central_system.is_price_optimized_charging_paused(self.cp_id):
-            self._attr_native_value = PRICE_OPTIMIZED_CHARGE_STATUS
+            self._attr_native_value = STATUS_TRANSLATION_KEYS[
+                PRICE_OPTIMIZED_CHARGE_STATUS
+            ]
             return self._attr_native_value
         if self.metric in (
             HAChargerSession.current_user.value,
@@ -337,6 +341,8 @@ class ChargePointMetric(RestoreSensor, SensorEntity):
                 self._attr_native_value = 0.0
                 return self._attr_native_value
         if value is not None:
+            if self.device_class is SensorDeviceClass.ENUM:
+                value = STATUS_TRANSLATION_KEYS.get(value, value)
             self._attr_native_value = value
         return self._attr_native_value
 
