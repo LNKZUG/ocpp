@@ -1,5 +1,23 @@
 # Release Notes
 
+## v0.5.27 - Home Assistant and CI compatibility
+
+Updates the WebSocket runtime used by current Home Assistant installations and makes the repository validation pipeline reproducible again.
+
+### Changed
+
+* Updates the pinned WebSockets runtime to `15.0.1` while keeping the established OCPP server behavior on its compatibility API.
+* Updates the GitHub checkout and Python setup actions to their Node.js 24 compatible versions.
+* Runs the full linting workflow once for maintained branch changes instead of duplicating it for the following release tag.
+* Keeps the existing OCPP status values unchanged while removing invalid state-translation tables that could not pass current Home Assistant validation.
+
+### Fixed
+
+* Restores clean Home Assistant test startup by constraining `josepy` to the version range supported by the pinned Home Assistant dependency chain.
+* Repairs the isolated Bandit pre-commit environment by updating the hook and declaring its missing `pbr` dependency.
+* Sorts the integration manifest according to current Hassfest requirements and removes obsolete direct repository URLs from configuration translations.
+* Updates WebSockets test doubles and closed-connection simulation for the current client and server API.
+
 ## v0.5.26 - Reliable multi-wallbox lifecycle
 
 Hardens transaction ordering, persisted controls, service routing, and the release pipeline while preserving the existing one-CentralSystem-and-port-per-wallbox setup.
