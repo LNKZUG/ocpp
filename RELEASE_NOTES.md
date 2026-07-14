@@ -1,5 +1,23 @@
 # Release Notes
 
+## v0.5.28 - Stable v0.5.25 runtime with focused fixes
+
+Supersedes `v0.5.26` and `v0.5.27` by returning to the proven `v0.5.25` runtime behavior and applying only narrowly scoped compatibility and metering fixes.
+
+### Changed
+
+* Restores the established one-CentralSystem-and-port-per-wallbox runtime from `v0.5.25` and removes the later lifecycle, service-routing, and multi-wallbox refactors.
+* Clearly labels the configured price source as an energy-price sensor and accepts only `EUR/kWh`, `ct/kWh`, or `EUR/MWh` units.
+* Keeps WebSockets `15.0.1` compatibility required by current Home Assistant installations without changing the established OCPP server lifecycle.
+* Keeps repository-level HACS validation disabled while retaining HACS ZIP release support.
+
+### Fixed
+
+* Uses cumulative `Energy.Active.Import.Interval` values as the active session-energy fallback when a charger does not send `Energy.Active.Import.Register`.
+* Rejects `EUR/h` running-cost sensors in the options flow instead of silently producing incorrect or missing monthly costs.
+* Restores German charger status translations with Hassfest-compatible enum keys.
+* Keeps the manifest, test dependencies, and GitHub Actions compatible with the current validation environment.
+
 ## v0.5.27 - Home Assistant and CI compatibility
 
 Updates the WebSocket runtime used by current Home Assistant installations and makes the repository validation pipeline reproducible again.
