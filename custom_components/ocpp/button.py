@@ -77,9 +77,7 @@ async def async_setup_entry(hass, entry, async_add_devices):
             if user_id in known_user_ids:
                 continue
             known_user_ids.add(user_id)
-            new_entities.append(
-                UserChargeStartButton(central_system, cp_id, user_id)
-            )
+            new_entities.append(UserChargeStartButton(central_system, cp_id, user_id))
         if new_entities:
             async_add_devices(new_entities, False)
 

@@ -2,7 +2,6 @@
 from unittest.mock import AsyncMock, Mock, patch
 
 from homeassistant import config_entries, data_entry_flow
-from ocpp.v16.enums import AuthorizationStatus
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -12,6 +11,7 @@ from custom_components.ocpp.const import (  # BINARY_SENSOR,; PLATFORMS,; SENSOR
     DOMAIN,
 )
 from custom_components.ocpp.user_registry import OcppUserRegistry
+from ocpp.v16.enums import AuthorizationStatus
 
 from .const import MOCK_CONFIG, MOCK_CONFIG_DATA
 
@@ -220,9 +220,7 @@ async def test_options_toggle_user_ok_returns_to_main_menu(hass):
         "custom_components.ocpp.config_flow.async_get_user_registry",
         return_value=registry,
     ):
-        result = await _select_options_menu_item(
-            hass, result["flow_id"], "toggle_user"
-        )
+        result = await _select_options_menu_item(hass, result["flow_id"], "toggle_user")
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], user_input={"user_id": "user-1"}
         )
@@ -247,9 +245,7 @@ async def test_options_delete_user_ok_returns_to_main_menu(hass):
         "custom_components.ocpp.config_flow.async_get_user_registry",
         return_value=registry,
     ):
-        result = await _select_options_menu_item(
-            hass, result["flow_id"], "delete_user"
-        )
+        result = await _select_options_menu_item(hass, result["flow_id"], "delete_user")
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], user_input={"user_id": "user-1"}
         )
@@ -382,6 +378,68 @@ def test_user_registry_returns_active_session(hass):
     assert registry.get_session("charger", "1")["id_tag"] == "ABC"
     assert registry.get_session("charger", 0) is None
     assert registry.get_session("other", 1) is None
+
+
+def test_user_registry_exposes_energy_without_a_valid_price(hass):
+    """Test missing price data remains visible instead of implying zero cost."""
+    registry = OcppUserRegistry(hass)
+    registry.users = {
+        "user-1": {
+            "user_id": "user-1",
+            "name": "Test User",
+            "id_tags": ["ABC"],
+            "energy_kwh": 0.0,
+            "monthly_energy_kwh": 0.0,
+            "monthly_cost": 0.0,
+            "monthly_energy_period": "2026-07",
+        }
+    }
+    registry.sessions = {
+        "charger:1": {
+            "transaction_id": 1,
+            "user_id": "user-1",
+            "id_tag": "ABC",
+            "cp_id": "charger",
+            "meter_start_kwh": 10.0,
+            "credited_energy_kwh": 0.0,
+        }
+    }
+    registry.current_month_period = Mock(return_value="2026-07")
+    registry.schedule_save = Mock()
+    registry.notify_updated = Mock()
+
+    registry.record_stop_transaction(1, "charger", 11.25)
+
+    assert registry.users["user-1"]["monthly_cost"] == 0.0
+    assert registry.users["user-1"]["monthly_unpriced_energy_kwh"] == 1.25
+    assert "charger:1" not in registry.sessions
+
+
+def test_user_registry_persists_cleanup_of_invalid_session(hass):
+    """Test an invalid negative session cannot reappear after restart."""
+    registry = OcppUserRegistry(hass)
+    registry.users = {
+        "user-1": {
+            "user_id": "user-1",
+            "name": "Test User",
+            "id_tags": ["ABC"],
+        }
+    }
+    registry.sessions = {
+        "charger:1": {
+            "transaction_id": 1,
+            "user_id": "user-1",
+            "id_tag": "ABC",
+            "cp_id": "charger",
+            "meter_start_kwh": 10.0,
+        }
+    }
+    registry.schedule_save = Mock()
+
+    registry.record_stop_transaction(1, "charger", 9.0)
+
+    assert "charger:1" not in registry.sessions
+    registry.schedule_save.assert_called_once()
 
 
 def test_user_registry_resets_monthly_counter_on_month_change(hass):

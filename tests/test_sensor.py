@@ -242,6 +242,7 @@ def test_user_monthly_energy_sensor_resets_stale_period():
     assert entity.extra_state_attributes == {
         "period": "2026-07",
         "reset_cycle": "monthly",
+        "unpriced_energy_kwh": 0.0,
     }
 
 
@@ -256,4 +257,5 @@ def test_user_monthly_cost_sensor_resets_stale_period():
     assert entity.extra_state_attributes == {
         "period": "2026-07",
         "reset_cycle": "monthly",
+        "unpriced_energy_kwh": 0.0,
     }

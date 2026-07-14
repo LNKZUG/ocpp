@@ -11,8 +11,7 @@ from homeassistant.const import CURRENCY_EURO, UnitOfEnergy
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.storage import Store
-from homeassistant.util import dt as dt_util
-from homeassistant.util import slugify
+from homeassistant.util import dt as dt_util, slugify
 
 from ocpp.v16.enums import AuthorizationStatus
 
@@ -97,6 +96,7 @@ class OcppUserRegistry:
             user["monthly_energy_period"] = period
             user["monthly_energy_kwh"] = 0.0
             user["monthly_cost"] = 0.0
+            user["monthly_unpriced_energy_kwh"] = 0.0
 
     @callback
     def list_users(self) -> list[dict[str, Any]]:
@@ -203,6 +203,7 @@ class OcppUserRegistry:
             "energy_kwh": 0.0,
             "monthly_energy_kwh": 0.0,
             "monthly_cost": 0.0,
+            "monthly_unpriced_energy_kwh": 0.0,
             "monthly_energy_period": self.current_month_period(),
             "created_at": time.time(),
         }
@@ -267,6 +268,7 @@ class OcppUserRegistry:
             "cp_id": cp_id,
             "meter_start_kwh": meter_start_kwh,
             "credited_energy_kwh": 0.0,
+            "priced_energy_kwh": 0.0,
             "started_at": time.time(),
         }
         self.schedule_save()
@@ -311,6 +313,15 @@ class OcppUserRegistry:
                 + (delta_energy * float(energy_price)),
                 6,
             )
+            session["priced_energy_kwh"] = round(
+                float(session.get("priced_energy_kwh", 0.0)) + delta_energy,
+                6,
+            )
+        else:
+            user["monthly_unpriced_energy_kwh"] = round(
+                float(user.get("monthly_unpriced_energy_kwh", 0.0)) + delta_energy,
+                6,
+            )
         session["credited_energy_kwh"] = round(credited_energy + delta_energy, 6)
         self.schedule_save()
         self.notify_updated()
@@ -326,12 +337,15 @@ class OcppUserRegistry:
         energy_price: float | None = None,
     ) -> None:
         """Close a user charging session and add energy to the user total."""
-        session = self.sessions.pop(self.session_key(cp_id, transaction_id), None)
+        session_key = self.session_key(cp_id, transaction_id)
+        session = self.sessions.get(session_key)
         if session is None:
             return
 
         user = self.users.get(session["user_id"])
         if user is None:
+            self.sessions.pop(session_key, None)
+            self.schedule_save()
             return
 
         if session_energy_kwh is None:
@@ -342,6 +356,8 @@ class OcppUserRegistry:
                 "Ignoring negative OCPP user session energy for transaction %s",
                 transaction_id,
             )
+            self.sessions.pop(session_key, None)
+            self.schedule_save()
             return
 
         self.ensure_current_month(user)
@@ -362,8 +378,18 @@ class OcppUserRegistry:
                     + (delta_energy * float(energy_price)),
                     6,
                 )
+                session["priced_energy_kwh"] = round(
+                    float(session.get("priced_energy_kwh", 0.0)) + delta_energy,
+                    6,
+                )
+            else:
+                user["monthly_unpriced_energy_kwh"] = round(
+                    float(user.get("monthly_unpriced_energy_kwh", 0.0)) + delta_energy,
+                    6,
+                )
         user["last_session_energy_kwh"] = round(float(session_energy_kwh), 6)
         user["last_session_finished_at"] = time.time()
+        self.sessions.pop(session_key, None)
         self.schedule_save()
         self.notify_updated()
 

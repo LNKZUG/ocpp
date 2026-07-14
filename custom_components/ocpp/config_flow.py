@@ -7,9 +7,9 @@ import voluptuous as vol
 from ocpp.v16.enums import AuthorizationStatus
 
 from .const import (
-    CONF_DEFAULT_AUTH_STATUS,
     CONF_CPID,
     CONF_CSID,
+    CONF_DEFAULT_AUTH_STATUS,
     CONF_ENERGY_PRICE_SENSOR,
     CONF_FORCE_SMART_CHARGING,
     CONF_HOST,
@@ -102,9 +102,14 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            # Todo: validate the user input
+            if any(
+                entry.data.get(CONF_HOST, DEFAULT_HOST) == user_input[CONF_HOST]
+                and entry.data.get(CONF_PORT, DEFAULT_PORT) == user_input[CONF_PORT]
+                for entry in self._async_current_entries()
+                if entry.data.get(ENTRY_TYPE, ENTRY_TYPE_CENTRAL) == ENTRY_TYPE_CENTRAL
+            ):
+                return self.async_abort(reason="already_configured")
             self._data = user_input
-            self._data[CONF_MONITORED_VARIABLES] = DEFAULT_MONITORED_VARIABLES
             self._data[ENTRY_TYPE] = ENTRY_TYPE_CENTRAL
             return self.async_create_entry(title=self._data[CONF_CSID], data=self._data)
 
