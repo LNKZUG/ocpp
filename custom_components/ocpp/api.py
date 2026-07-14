@@ -19,8 +19,8 @@ import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 import voluptuous as vol
-import websockets.protocol
-import websockets.server
+import websockets.legacy.protocol
+import websockets.legacy.server
 
 from ocpp.exceptions import NotImplementedError, TypeConstraintViolationError
 from ocpp.messages import CallError
@@ -263,7 +263,7 @@ class CentralSystem:
         self = CentralSystem(hass, entry)
         await self.async_load_charge_state()
 
-        server = await websockets.server.serve(
+        server = await websockets.legacy.server.serve(
             self.on_connect,
             self.host,
             self.port,
@@ -339,7 +339,7 @@ class CentralSystem:
             self.hass.async_create_task(self.async_save_charge_state())
 
     async def on_connect(
-        self, websocket: websockets.server.WebSocketServerProtocol, path: str
+        self, websocket: websockets.legacy.server.WebSocketServerProtocol, path: str
     ):
         """Request handler executed for every new OCPP connection."""
         if self.config.get(CONF_SKIP_SCHEMA_VALIDATION, DEFAULT_SKIP_SCHEMA_VALIDATION):
@@ -668,7 +668,7 @@ class ChargePoint(cp):
     def __init__(
         self,
         id: str,
-        connection: websockets.server.WebSocketServerProtocol,
+        connection: websockets.legacy.server.WebSocketServerProtocol,
         hass: HomeAssistant,
         entry: ConfigEntry,
         central: CentralSystem,
@@ -1692,7 +1692,9 @@ class ChargePoint(cp):
             for task in self.tasks:
                 task.cancel()
 
-    async def reconnect(self, connection: websockets.server.WebSocketServerProtocol):
+    async def reconnect(
+        self, connection: websockets.legacy.server.WebSocketServerProtocol
+    ):
         """Reconnect charge point."""
         _LOGGER.debug(f"Reconnect websocket to {self.id}")
 

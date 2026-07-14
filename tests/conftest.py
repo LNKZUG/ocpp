@@ -4,7 +4,7 @@ import sys
 from unittest.mock import patch
 
 import pytest
-import websockets
+import websockets.legacy.server
 
 pytest_plugins = "pytest_homeassistant_custom_component"
 
@@ -52,10 +52,10 @@ def skip_notifications_fixture():
 def bypass_get_data_fixture():
     """Skip calls to get data from API."""
     future = asyncio.Future()
-    future.set_result(websockets.WebSocketServer)
-    with patch("websockets.server.serve", return_value=future), patch(
-        "websockets.server.WebSocketServer.close"
-    ), patch("websockets.server.WebSocketServer.wait_closed"):
+    future.set_result(websockets.legacy.server.WebSocketServer)
+    with patch("websockets.legacy.server.serve", return_value=future), patch(
+        "websockets.legacy.server.WebSocketServer.close"
+    ), patch("websockets.legacy.server.WebSocketServer.wait_closed"):
         yield
 
 
