@@ -85,6 +85,11 @@ async def _select_options_menu_item(hass, flow_id, next_step_id):
 
 async def test_options_settings_ok_returns_to_main_menu(hass):
     """Test saving settings returns to the options main menu."""
+    hass.states.async_set(
+        "sensor.energy_price",
+        "0.25",
+        {"unit_of_measurement": "EUR/kWh"},
+    )
     entry, result = await _init_options_flow(hass)
     result = await _select_options_menu_item(hass, result["flow_id"], "settings")
 
@@ -100,6 +105,29 @@ async def test_options_settings_ok_returns_to_main_menu(hass):
     assert result["step_id"] == "init"
     assert entry.options[CONF_DEFAULT_AUTH_STATUS] == AuthorizationStatus.blocked.value
     assert entry.options[CONF_ENERGY_PRICE_SENSOR] == "sensor.energy_price"
+
+
+async def test_options_settings_rejects_cost_rate_sensor(hass):
+    """Test settings reject EUR/h cost sensors as an energy price source."""
+    hass.states.async_set(
+        "sensor.running_energy_cost",
+        "2.58",
+        {"unit_of_measurement": "EUR/h"},
+    )
+    entry, result = await _init_options_flow(hass)
+    result = await _select_options_menu_item(hass, result["flow_id"], "settings")
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_DEFAULT_AUTH_STATUS: AuthorizationStatus.blocked.value,
+            CONF_ENERGY_PRICE_SENSOR: "sensor.running_energy_cost",
+        },
+    )
+
+    assert result["type"] == data_entry_flow.RESULT_TYPE_FORM
+    assert result["errors"] == {"base": "invalid_energy_price_sensor_unit"}
+    assert entry.options == {}
 
 
 class _MockUserRegistry:

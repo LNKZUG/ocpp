@@ -47,6 +47,7 @@ from .const import (
     ENTRY_TYPE,
     ENTRY_TYPE_CENTRAL,
     ENTRY_TYPE_USERS,
+    energy_price_divisor,
 )
 from .user_registry import async_get_user_registry
 
@@ -163,6 +164,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
     async def async_step_settings(self, user_input=None):
         """Configure OCPP user defaults."""
+        errors = {}
         current_status = self._config_entry.options.get(
             CONF_DEFAULT_AUTH_STATUS,
             self._config_entry.data.get(
@@ -175,15 +177,26 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         )
 
         if user_input is not None:
-            return await self._async_finish_to_main_menu(
-                {
-                    **self._config_entry.options,
-                    CONF_DEFAULT_AUTH_STATUS: user_input[CONF_DEFAULT_AUTH_STATUS],
-                    CONF_ENERGY_PRICE_SENSOR: user_input.get(
-                        CONF_ENERGY_PRICE_SENSOR, ""
-                    ),
-                }
-            )
+            energy_price_sensor = user_input.get(CONF_ENERGY_PRICE_SENSOR, "")
+            if energy_price_sensor:
+                state = self.hass.states.get(energy_price_sensor)
+                unit = (
+                    state.attributes.get("unit_of_measurement", "")
+                    if state is not None
+                    else ""
+                )
+                if energy_price_divisor(unit) is None:
+                    errors["base"] = "invalid_energy_price_sensor_unit"
+            if not errors:
+                return await self._async_finish_to_main_menu(
+                    {
+                        **self._config_entry.options,
+                        CONF_DEFAULT_AUTH_STATUS: user_input[
+                            CONF_DEFAULT_AUTH_STATUS
+                        ],
+                        CONF_ENERGY_PRICE_SENSOR: energy_price_sensor,
+                    }
+                )
 
         return self.async_show_form(
             step_id="settings",
@@ -207,6 +220,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     ),
                 }
             ),
+            errors=errors,
         )
 
     async def async_step_add_user(self, user_input=None):

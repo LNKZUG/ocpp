@@ -19,8 +19,8 @@ from homeassistant.helpers.storage import Store
 import homeassistant.helpers.config_validation as cv
 from homeassistant.util import dt as dt_util
 import voluptuous as vol
-import websockets.protocol
-import websockets.server
+import websockets.legacy.protocol
+import websockets.legacy.server
 
 from ocpp.exceptions import NotImplementedError, TypeConstraintViolationError
 from ocpp.messages import CallError
@@ -103,6 +103,7 @@ from .const import (
     HA_POWER_UNIT,
     UNITS_OCCP_TO_HA,
     USER_REGISTRY,
+    energy_price_divisor,
 )
 from .enums import (
     ConfigurationKey as ckey,
@@ -249,7 +250,7 @@ class CentralSystem:
         self = CentralSystem(hass, entry)
         await self.async_load_charge_state()
 
-        server = await websockets.server.serve(
+        server = await websockets.legacy.server.serve(
             self.on_connect,
             self.host,
             self.port,
@@ -299,7 +300,7 @@ class CentralSystem:
             self.hass.async_create_task(self.async_save_charge_state())
 
     async def on_connect(
-        self, websocket: websockets.server.WebSocketServerProtocol, path: str
+        self, websocket: websockets.legacy.server.WebSocketServerProtocol, path: str
     ):
         """Request handler executed for every new OCPP connection."""
         if self.config.get(CONF_SKIP_SCHEMA_VALIDATION, DEFAULT_SKIP_SCHEMA_VALIDATION):
@@ -537,10 +538,16 @@ class CentralSystem:
                 state.state,
             )
             return None
-        unit = str(state.attributes.get("unit_of_measurement", "")).lower()
-        if "ct/" in unit or "cent/" in unit or unit.startswith("ct"):
-            price = price / 100
-        return price
+        unit = state.attributes.get("unit_of_measurement", "")
+        divisor = energy_price_divisor(unit)
+        if divisor is None:
+            _LOGGER.warning(
+                "Ignoring OCPP energy price sensor %s with unsupported unit %s",
+                entity_id,
+                unit or "<missing>",
+            )
+            return None
+        return price / divisor
 
     async def set_price_optimized_charging_allowed(
         self, cp_id: str, allowed: bool
@@ -625,7 +632,7 @@ class ChargePoint(cp):
     def __init__(
         self,
         id: str,
-        connection: websockets.server.WebSocketServerProtocol,
+        connection: websockets.legacy.server.WebSocketServerProtocol,
         hass: HomeAssistant,
         entry: ConfigEntry,
         central: CentralSystem,
@@ -1736,7 +1743,9 @@ class ChargePoint(cp):
             for task in self.tasks:
                 task.cancel()
 
-    async def reconnect(self, connection: websockets.server.WebSocketServerProtocol):
+    async def reconnect(
+        self, connection: websockets.legacy.server.WebSocketServerProtocol
+    ):
         """Reconnect charge point."""
         _LOGGER.debug(f"Reconnect websocket to {self.id}")
 
@@ -1884,6 +1893,14 @@ class ChargePoint(cp):
             and self.active_transaction_id == 0
             and transaction_id in getattr(self, "_stopped_transaction_ids", set())
         )
+        has_import_register = any(
+            sampled_value.get(om.measurand.value) == DEFAULT_MEASURAND
+            for bucket in meter_value
+            for sampled_value in (
+                bucket.get(om.sampled_value.name)
+                or bucket.get(om.sampled_value.value, [])
+            )
+        )
 
         for bucket in meter_value:
             unprocessed = bucket.get(om.sampled_value.name)
@@ -1912,7 +1929,29 @@ class ChargePoint(cp):
                     self._charger_reports_session_energy = True
 
                 if phase is None:
-                    if unit == DEFAULT_POWER_UNIT:
+                    if (
+                        transaction_matches
+                        and not has_import_register
+                        and measurand
+                        == Measurand.energy_active_import_interval.value
+                        and unit
+                        in (
+                            DEFAULT_ENERGY_UNIT,
+                            HA_ENERGY_UNIT,
+                        )
+                    ):
+                        # Some chargers expose the transaction's cumulative
+                        # energy through Energy.Active.Import.Interval instead
+                        # of the register measurand. Use it only as a fallback
+                        # when this MeterValues call has no import register.
+                        value_kwh = float(value)
+                        if unit == DEFAULT_ENERGY_UNIT:
+                            value_kwh = value_kwh / 1000
+                        self._metrics[measurand].value = value_kwh
+                        self._metrics[measurand].unit = HA_ENERGY_UNIT
+                        self._charger_reports_session_energy = True
+                        self._set_session_energy(value_kwh, HA_ENERGY_UNIT)
+                    elif unit == DEFAULT_POWER_UNIT:
                         self._metrics[measurand].value = float(value) / 1000
                         self._metrics[measurand].unit = HA_POWER_UNIT
                     elif (

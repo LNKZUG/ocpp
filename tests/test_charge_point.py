@@ -496,9 +496,33 @@ def test_central_system_reads_energy_price_sensor_as_eur_per_kwh():
     assert central.get_current_energy_price("charger") == 0.315
     assert central.get_current_energy_price("other") is None
 
+    state.attributes["unit_of_measurement"] = "EUR/h"
+    assert central.get_current_energy_price("charger") is None
 
-def test_meter_values_add_live_user_session_energy():
-    """Test MeterValues add live session energy to the managed user registry."""
+
+@pytest.mark.parametrize(
+    ("measurand", "value", "unit", "meter_start", "expected_energy"),
+    [
+        (
+            Measurand.energy_active_import_register.value,
+            "11500",
+            UnitOfMeasure.wh.value,
+            10.0,
+            1.5,
+        ),
+        (
+            Measurand.energy_active_import_interval.value,
+            "1.29",
+            UnitOfMeasure.kwh.value,
+            1440.61,
+            1.29,
+        ),
+    ],
+)
+def test_meter_values_add_live_user_session_energy(
+    measurand, value, unit, meter_start, expected_energy
+):
+    """Test register and cumulative interval values update session energy."""
 
     class UserRegistryStub:
         """Minimal user registry test double."""
@@ -532,7 +556,7 @@ def test_meter_values_add_live_user_session_energy():
     charge_point._charger_reports_session_energy = False
     charge_point._metrics = defaultdict(lambda: Metric(None, None))
     charge_point._metrics[csess.transaction_id.value].value = 123
-    charge_point._metrics[csess.meter_start.value].value = 10.0
+    charge_point._metrics[csess.meter_start.value].value = meter_start
     charge_point._metrics[csess.current_user.value].value = "Lukas"
     charge_point._metrics[cstat.id_tag.value].value = "ABC"
 
@@ -543,20 +567,22 @@ def test_meter_values_add_live_user_session_energy():
             {
                 "sampledValue": [
                     {
-                        "value": "11500",
-                        "measurand": Measurand.energy_active_import_register.value,
-                        "unit": UnitOfMeasure.wh.value,
+                        "value": value,
+                        "measurand": measurand,
+                        "unit": unit,
                     }
                 ]
             }
         ],
     )
 
-    assert charge_point._metrics[csess.session_energy.value].value == 1.5
+    assert (
+        charge_point._metrics[csess.session_energy.value].value == expected_energy
+    )
     assert charge_point.central.user_registry.recorded_session_energy == (
         123,
         "charger",
-        1.5,
+        expected_energy,
         None,
     )
 

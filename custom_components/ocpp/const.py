@@ -73,6 +73,25 @@ STORAGE_USER_REGISTRY = "ocpp_user_registry"
 ICON = "mdi:ev-station"
 SLEEP_TIME = 60
 
+ENERGY_PRICE_UNIT_DIVISORS = {
+    "eur/kwh": 1,
+    "€/kwh": 1,
+    "euro/kwh": 1,
+    "ct/kwh": 100,
+    "cent/kwh": 100,
+    "c/kwh": 100,
+    "eur/mwh": 1000,
+    "€/mwh": 1000,
+    "euro/mwh": 1000,
+}
+
+
+def energy_price_divisor(unit: object) -> float | None:
+    """Return the divisor needed to normalize an energy price to EUR/kWh."""
+    normalized_unit = str(unit or "").lower().replace(" ", "")
+    return ENERGY_PRICE_UNIT_DIVISORS.get(normalized_unit)
+
+
 # Platforms
 NUMBER = "number"
 SENSOR = "sensor"
