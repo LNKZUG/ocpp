@@ -2063,7 +2063,7 @@ async def test_cms_responses(hass, socket_enabled):
         subprotocols=["ocpp1.6"],
     ) as ws:
         cp = ChargePoint("CP_3_test", ws)
-        ws.state = 3  # CLOSED = 3
+        ws.protocol.state = websockets.protocol.State.CLOSED
         await asyncio.sleep(3)
         await ws.close()
 

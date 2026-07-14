@@ -3,7 +3,7 @@
         "step": {
             "user": {
                 "title": "OCPP Configuration",
-                "description": "If you need help with the configuration have a look here: https://github.com/lbbrhzn/ocpp",
+                "description": "Configure the connection to the OCPP central system.",
                 "data": {
                     "host": "Central system host address",
                     "port": "Central system port number",
@@ -61,18 +61,6 @@
         }
     },
     "entity": {
-        "sensor": {
-            "status": {
-                "state": {
-                    "PriceOptimizedChargingPaused": "Paused by price optimized charging"
-                }
-            },
-            "status_connector": {
-                "state": {
-                    "PriceOptimizedChargingPaused": "Paused by price optimized charging"
-                }
-            }
-        },
         "number": {
             "auto_stop_delay": {"name": "Auto Stop Delay"},
             "maximum_current": {"name": "Maximum Current"}
