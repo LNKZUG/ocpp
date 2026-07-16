@@ -20,6 +20,7 @@ from .const import DATA_USERS_UPDATED, DOMAIN, STORAGE_USER_REGISTRY
 _LOGGER = logging.getLogger(__name__)
 
 STORAGE_VERSION = 1
+RESERVED_USER_NAMES = frozenset({"frei"})
 
 
 class OcppUserRegistry:
@@ -82,6 +83,11 @@ class OcppUserRegistry:
             if tag and tag not in tags:
                 tags.append(tag)
         return tags
+
+    @staticmethod
+    def is_reserved_user_name(name: str | None) -> bool:
+        """Return whether a name is reserved for an integration state."""
+        return str(name or "").strip().casefold() in RESERVED_USER_NAMES
 
     @staticmethod
     def current_month_period() -> str:
@@ -189,6 +195,8 @@ class OcppUserRegistry:
         self, name: str, id_tags: str | list[str], active: bool = True
     ) -> str:
         """Add a managed OCPP user."""
+        if self.is_reserved_user_name(name):
+            raise ValueError("Reserved OCPP user name")
         parsed_tags = self.parse_id_tags(id_tags)
         user_id = slugify(name) or uuid4().hex
         if user_id in self.users:
@@ -221,6 +229,8 @@ class OcppUserRegistry:
         user = self.users[user_id]
         old_id_tags = user.get("id_tags", [])
         if name is not None:
+            if self.is_reserved_user_name(name):
+                raise ValueError("Reserved OCPP user name")
             user["name"] = str(name).strip()
         if id_tags is not None:
             parsed_tags = self.parse_id_tags(id_tags)

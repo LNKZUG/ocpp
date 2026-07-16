@@ -310,6 +310,9 @@ class ChargePointMetric(RestoreSensor, SensorEntity):
     def native_value(self):
         """Return the state of the sensor, rounding if a number."""
         value = self.central_system.get_metric(self.cp_id, self.metric)
+        if self.metric == HAChargerSession.current_user.value and value is None:
+            self._attr_native_value = "Frei"
+            return self._attr_native_value
         if self.metric in (
             HAChargerStatuses.status.value,
             HAChargerStatuses.status_connector.value,
@@ -321,7 +324,6 @@ class ChargePointMetric(RestoreSensor, SensorEntity):
         if (
             self.metric
             in (
-                HAChargerSession.current_user.value,
                 HAChargerSession.transaction_id.value,
                 HAChargerSession.meter_start.value,
                 HAChargerSession.session_energy.value,

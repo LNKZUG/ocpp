@@ -233,6 +233,7 @@
         },
         "error": {
             "invalid_user": "Name und mindestens ein idTag sind erforderlich.",
+            "reserved_user_name": "Dieser Nutzername ist für einen Systemstatus reserviert.",
             "duplicate_id_tag": "Mindestens ein idTag ist bereits einem anderen Nutzer zugeordnet.",
             "invalid_energy_price_sensor_unit": "Der gewählte Sensor muss einen Strompreis in EUR/kWh, ct/kWh oder EUR/MWh liefern. EUR/h ist eine Kostenrate und kann nicht verwendet werden."
         },

@@ -141,6 +141,7 @@ def test_wallbox_current_user_and_monthly_energy_sensor_classes():
 
     assert current_user.device_class is None
     assert current_user.state_class is None
+    assert current_user.native_value == "Frei"
     assert monthly_energy.device_class == SensorDeviceClass.ENERGY
     assert monthly_energy.state_class == SensorStateClass.TOTAL
 

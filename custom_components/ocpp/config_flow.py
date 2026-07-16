@@ -49,7 +49,7 @@ from .const import (
     ENTRY_TYPE_USERS,
     energy_price_divisor,
 )
-from .user_registry import async_get_user_registry
+from .user_registry import OcppUserRegistry, async_get_user_registry
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
@@ -229,6 +229,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             id_tags = registry.parse_id_tags(user_input["id_tags"])
             if not user_input["name"].strip() or not id_tags:
                 errors["base"] = "invalid_user"
+            elif OcppUserRegistry.is_reserved_user_name(user_input["name"]):
+                errors["base"] = "reserved_user_name"
             elif registry.find_conflicting_id_tags(id_tags):
                 errors["base"] = "duplicate_id_tag"
             else:
@@ -283,6 +285,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             id_tags = registry.parse_id_tags(user_input["id_tags"])
             if not user_input["name"].strip() or not id_tags:
                 errors["base"] = "invalid_user"
+            elif OcppUserRegistry.is_reserved_user_name(user_input["name"]):
+                errors["base"] = "reserved_user_name"
             elif registry.find_conflicting_id_tags(id_tags, self._user_id):
                 errors["base"] = "duplicate_id_tag"
             else:

@@ -232,6 +232,7 @@
         },
         "error": {
             "invalid_user": "Name and at least one idTag are required.",
+            "reserved_user_name": "This user name is reserved for a system state.",
             "duplicate_id_tag": "At least one idTag is already assigned to another user.",
             "invalid_energy_price_sensor_unit": "The selected sensor must provide an energy price in EUR/kWh, ct/kWh or EUR/MWh. EUR/h is a running cost and cannot be used."
         },

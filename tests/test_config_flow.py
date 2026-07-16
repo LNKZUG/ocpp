@@ -204,6 +204,47 @@ async def test_options_add_user_ok_returns_to_main_menu(hass):
     }
 
 
+async def test_options_rejects_reserved_user_name(hass):
+    """Test the free-state label cannot be used as a user name."""
+    registry = _MockUserRegistry()
+    _, result = await _init_options_flow(hass)
+    result = await _select_options_menu_item(hass, result["flow_id"], "add_user")
+
+    with patch(
+        "custom_components.ocpp.config_flow.async_get_user_registry",
+        return_value=registry,
+    ):
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            user_input={"name": "  FREI ", "id_tags": "TAG1", "active": True},
+        )
+
+    assert result["type"] == data_entry_flow.RESULT_TYPE_FORM
+    assert result["errors"] == {"base": "reserved_user_name"}
+    assert registry.added_user is None
+
+
+async def test_user_registry_rejects_reserved_name_on_add_and_update(hass):
+    """Test all registry write paths enforce reserved user names."""
+    registry = OcppUserRegistry(hass)
+    registry.async_save = AsyncMock()
+    registry.notify_updated = Mock()
+
+    with pytest.raises(ValueError, match="Reserved OCPP user name"):
+        await registry.async_add_user("Frei", ["TAG1"])
+
+    registry.users["user-1"] = {
+        "user_id": "user-1",
+        "name": "Existing User",
+        "id_tags": ["TAG2"],
+    }
+    with pytest.raises(ValueError, match="Reserved OCPP user name"):
+        await registry.async_update_user("user-1", name="frei")
+
+    assert registry.users["user-1"]["name"] == "Existing User"
+    registry.async_save.assert_not_awaited()
+
+
 async def test_options_edit_user_ok_returns_to_main_menu(hass):
     """Test editing a user returns to the options main menu."""
     registry = _MockUserRegistry()
