@@ -115,7 +115,6 @@ from .enums import (
 )
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
-logging.getLogger(DOMAIN).setLevel(logging.INFO)
 # Uncomment these when Debugging
 # logging.getLogger("asyncio").setLevel(logging.DEBUG)
 # logging.getLogger("websockets").setLevel(logging.DEBUG)
@@ -228,6 +227,8 @@ class CentralSystem:
         self.selected_user_ids = {}
         self.charge_modes = {}
         self.price_optimized_charging_allowed = {}
+        self.auto_stop_on_evse_suspended = {}
+        self.auto_stop_delays = {}
         self.charge_points = {}
         if entry.data.get(CONF_SSL, DEFAULT_SSL):
             self.ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -280,6 +281,14 @@ class CentralSystem:
                 "price_optimized_charging_allowed", {}
             ).items()
         }
+        self.auto_stop_on_evse_suspended = {
+            cp_id: bool(enabled)
+            for cp_id, enabled in data.get("auto_stop_on_evse_suspended", {}).items()
+        }
+        self.auto_stop_delays = {
+            cp_id: float(delay)
+            for cp_id, delay in data.get("auto_stop_delays", {}).items()
+        }
 
     async def async_save_charge_state(self) -> None:
         """Persist charger control state."""
@@ -290,6 +299,8 @@ class CentralSystem:
                 "price_optimized_charging_allowed": (
                     self.price_optimized_charging_allowed
                 ),
+                "auto_stop_on_evse_suspended": self.auto_stop_on_evse_suspended,
+                "auto_stop_delays": self.auto_stop_delays,
             }
         )
 
@@ -380,7 +391,13 @@ class CentralSystem:
         """Return whether EVSE suspend should automatically stop the transaction."""
         if cp_id in self.charge_points:
             return self.charge_points[cp_id].auto_stop_on_evse_suspended
-        return DEFAULT_AUTO_STOP_ON_EVSE_SUSPENDED
+        return self.auto_stop_on_evse_suspended.get(
+            cp_id,
+            self.entry.data.get(
+                CONF_AUTO_STOP_ON_EVSE_SUSPENDED,
+                DEFAULT_AUTO_STOP_ON_EVSE_SUSPENDED,
+            ),
+        )
 
     def has_active_transaction(self, cp_id: str):
         """Return whether the charger has an active transaction."""
@@ -392,6 +409,8 @@ class CentralSystem:
         """Set whether EVSE suspend should automatically stop the transaction."""
         if cp_id in self.charge_points:
             self.charge_points[cp_id].auto_stop_on_evse_suspended = value
+            self.auto_stop_on_evse_suspended[cp_id] = bool(value)
+            self.schedule_charge_state_save()
             return True
         return False
 
@@ -399,12 +418,17 @@ class CentralSystem:
         """Return EVSE suspend auto-stop delay in seconds."""
         if cp_id in self.charge_points:
             return self.charge_points[cp_id].auto_stop_delay
-        return DEFAULT_AUTO_STOP_DELAY
+        return self.auto_stop_delays.get(
+            cp_id,
+            self.entry.data.get(CONF_AUTO_STOP_DELAY, DEFAULT_AUTO_STOP_DELAY),
+        )
 
     def set_auto_stop_delay(self, cp_id: str, value: float):
         """Set EVSE suspend auto-stop delay in seconds."""
         if cp_id in self.charge_points:
             self.charge_points[cp_id].auto_stop_delay = value
+            self.auto_stop_delays[cp_id] = float(value)
+            self.schedule_charge_state_save()
             return True
         return False
 
@@ -647,14 +671,11 @@ class ChargePoint(cp):
         self._remote_start_cleanup_task = None
         self._remote_start_cleanup_id_tag = None
         self._price_pause_profile_applied = False
-        self.auto_stop_on_evse_suspended = entry.data.get(
-            CONF_AUTO_STOP_ON_EVSE_SUSPENDED,
-            DEFAULT_AUTO_STOP_ON_EVSE_SUSPENDED,
+        self._last_connector_status_info = ""
+        self.auto_stop_on_evse_suspended = central.get_auto_stop_on_evse_suspended(
+            central.cpid
         )
-        self.auto_stop_delay = entry.data.get(
-            CONF_AUTO_STOP_DELAY,
-            DEFAULT_AUTO_STOP_DELAY,
-        )
+        self.auto_stop_delay = central.get_auto_stop_delay(central.cpid)
         self._charger_reports_session_energy = False
         self._metrics = defaultdict(lambda: Metric(None, None))
         self._metrics[cdet.identifier.value].value = id
@@ -1315,21 +1336,35 @@ class ChargePoint(cp):
         )
         if get_charge_mode is None or get_price_optimized_charging_allowed is None:
             return False
-        return get_charge_mode(
-            self.central.cpid
-        ) == PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED and not get_price_optimized_charging_allowed(
-            self.central.cpid
+        return (
+            get_charge_mode(self.central.cpid) == PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED
+            and not get_price_optimized_charging_allowed(self.central.cpid)
         )
 
-    def _schedule_auto_stop_on_evse_suspended(self, reason: str):
+    def _is_smart_charging_suspension(self, status_info: str | None = None) -> bool:
+        """Return whether the charger reports an intentional smart-charge pause."""
+        info = str(
+            status_info
+            if status_info is not None
+            else getattr(self, "_last_connector_status_info", "")
+        ).casefold()
+        return ("smart-charge" in info or "smart charge" in info) and "suspend" in info
+
+    def _schedule_auto_stop_on_evse_suspended(
+        self, reason: str, status_info: str | None = None
+    ):
         """Schedule remote stop after EVSE-side suspension if still idle."""
         if not self.auto_stop_on_evse_suspended:
             return
         if self.active_transaction_id == 0:
             return
-        if getattr(self, "_price_pause_profile_applied", False):
+        if (
+            getattr(self, "_price_pause_profile_applied", False)
+            or self._is_waiting_for_price_optimized_charge_window()
+            or self._is_smart_charging_suspension(status_info)
+        ):
             _LOGGER.debug(
-                "%s skips EVSE auto-stop while price optimized charging is paused",
+                "%s skips EVSE auto-stop during an intentional charging pause",
                 self.id,
             )
             return
@@ -1360,6 +1395,10 @@ class ChargePoint(cp):
             if self.active_transaction_id != transaction_id:
                 return
             if getattr(self, "_price_pause_profile_applied", False):
+                return
+            if self._is_waiting_for_price_optimized_charge_window():
+                return
+            if self._is_smart_charging_suspension():
                 return
             if self._has_active_import():
                 return
@@ -2091,10 +2130,17 @@ class ChargePoint(cp):
     def on_status_notification(self, connector_id, error_code, status, **kwargs):
         """Handle a status notification."""
 
+        status_info = kwargs.get("info", "")
+
         if connector_id == 0 or connector_id is None:
             self._metrics[cstat.status.value].value = status
             self._metrics[cstat.error_code.value].value = error_code
         elif connector_id == 1:
+            if status_info or status not in (
+                ChargePointStatus.suspended_ev.value,
+                ChargePointStatus.suspended_evse.value,
+            ):
+                self._last_connector_status_info = status_info
             self._metrics[cstat.status_connector.value].value = status
             self._metrics[cstat.error_code_connector.value].value = error_code
             if (
@@ -2141,7 +2187,8 @@ class ChargePoint(cp):
                 self._metrics[Measurand.power_reactive_export.value].value = 0
         if status == ChargePointStatus.suspended_evse.value:
             self._schedule_auto_stop_on_evse_suspended(
-                "StatusNotification SuspendedEVSE"
+                "StatusNotification SuspendedEVSE",
+                getattr(self, "_last_connector_status_info", status_info),
             )
         elif status in (
             ChargePointStatus.available.value,

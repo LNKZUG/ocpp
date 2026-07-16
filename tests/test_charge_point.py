@@ -167,6 +167,48 @@ async def test_price_optimized_pause_skips_evse_suspended_auto_stop():
     assert stopped is False
 
 
+async def test_price_optimized_waiting_skips_evse_suspended_auto_stop():
+    """Test the persisted price waiting state prevents a premature auto-stop."""
+
+    charge_point = object.__new__(OcppChargePoint)
+    charge_point.id = "test_cpid"
+    charge_point.central = SimpleNamespace(
+        cpid="test_cpid",
+        get_charge_mode=lambda _cpid: PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED,
+        get_price_optimized_charging_allowed=lambda _cpid: False,
+    )
+    charge_point._metrics = defaultdict(lambda: Metric(None, None))
+    charge_point.active_transaction_id = 123
+    charge_point.auto_stop_on_evse_suspended = True
+    charge_point.auto_stop_delay = 0
+    charge_point._auto_stop_task = None
+    charge_point._price_pause_profile_applied = False
+
+    charge_point._schedule_auto_stop_on_evse_suspended("price waiting")
+
+    assert charge_point._auto_stop_task is None
+
+
+async def test_smart_charging_status_skips_evse_suspended_auto_stop():
+    """Test an explicit charger smart-charge pause keeps the transaction open."""
+
+    charge_point = object.__new__(OcppChargePoint)
+    charge_point.id = "test_cpid"
+    charge_point._metrics = defaultdict(lambda: Metric(None, None))
+    charge_point.active_transaction_id = 123
+    charge_point.auto_stop_on_evse_suspended = True
+    charge_point.auto_stop_delay = 0
+    charge_point._auto_stop_task = None
+    charge_point._price_pause_profile_applied = False
+
+    charge_point._schedule_auto_stop_on_evse_suspended(
+        "StatusNotification SuspendedEVSE",
+        "H10.Smart-Charge trigger charge station suspended",
+    )
+
+    assert charge_point._auto_stop_task is None
+
+
 async def test_price_optimized_pause_cancels_pending_evse_auto_stop():
     """Test an already scheduled EVSE auto-stop is skipped after price pause."""
 
@@ -206,6 +248,38 @@ async def test_price_optimized_pause_cancels_pending_evse_auto_stop():
 
     assert stopped is False
     assert triggered is False
+
+
+async def test_smart_charging_status_cancels_pending_evse_auto_stop():
+    """Test a later smart-charge status prevents an already pending auto-stop."""
+
+    stopped = False
+
+    async def stop_transaction():
+        nonlocal stopped
+        stopped = True
+        return True
+
+    charge_point = object.__new__(OcppChargePoint)
+    charge_point.id = "test_cpid"
+    charge_point._metrics = defaultdict(lambda: Metric(None, None))
+    charge_point._metrics[
+        cstat.status_connector.value
+    ].value = ChargePointStatus.suspended_evse.value
+    charge_point._metrics[Measurand.power_active_import.value].value = 0
+    charge_point._metrics[Measurand.current_import.value].value = 0
+    charge_point.active_transaction_id = 123
+    charge_point.auto_stop_on_evse_suspended = True
+    charge_point._auto_stop_task = None
+    charge_point._price_pause_profile_applied = False
+    charge_point._last_connector_status_info = (
+        "H10.Smart-Charge trigger charge station suspended"
+    )
+    charge_point.stop_transaction = stop_transaction
+
+    await charge_point._auto_stop_after_evse_suspended(0, 123, "test")
+
+    assert stopped is False
 
 
 async def test_pending_remote_start_cleanup_unlocks_and_refreshes(monkeypatch):
@@ -987,6 +1061,8 @@ def test_charge_state_loads_persistent_controls():
                     "ignored": "Unknown",
                 },
                 "price_optimized_charging_allowed": {"charger": False},
+                "auto_stop_on_evse_suspended": {"charger": False},
+                "auto_stop_delays": {"charger": 45},
             }
 
     central_system = object.__new__(CentralSystem)
@@ -999,6 +1075,8 @@ def test_charge_state_loads_persistent_controls():
         "charger": PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED
     }
     assert central_system.price_optimized_charging_allowed == {"charger": False}
+    assert central_system.auto_stop_on_evse_suspended == {"charger": False}
+    assert central_system.auto_stop_delays == {"charger": 45.0}
 
 
 def test_charge_state_save_persists_controls():
@@ -1020,6 +1098,8 @@ def test_charge_state_save_persists_controls():
     central_system.selected_user_ids = {"charger": "lukas"}
     central_system.charge_modes = {"charger": PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED}
     central_system.price_optimized_charging_allowed = {"charger": False}
+    central_system.auto_stop_on_evse_suspended = {"charger": False}
+    central_system.auto_stop_delays = {"charger": 45.0}
 
     asyncio.run(central_system.async_save_charge_state())
 
@@ -1027,6 +1107,8 @@ def test_charge_state_save_persists_controls():
         "selected_user_ids": {"charger": "lukas"},
         "charge_modes": {"charger": PRICE_OPTIMIZED_CHARGE_MODE_OPTIMIZED},
         "price_optimized_charging_allowed": {"charger": False},
+        "auto_stop_on_evse_suspended": {"charger": False},
+        "auto_stop_delays": {"charger": 45.0},
     }
 
 
@@ -1070,6 +1152,30 @@ def test_charge_state_changes_schedule_persistence():
     }
     assert central_system.price_optimized_charging_allowed == {"charger": False}
     assert len(saves) == 3
+
+
+def test_auto_stop_control_changes_schedule_persistence():
+    """Test EVSE auto-stop configuration survives integration reloads."""
+
+    charge_point = SimpleNamespace(
+        auto_stop_on_evse_suspended=True,
+        auto_stop_delay=10,
+    )
+    saves = []
+    central_system = object.__new__(CentralSystem)
+    central_system.charge_points = {"charger": charge_point}
+    central_system.auto_stop_on_evse_suspended = {}
+    central_system.auto_stop_delays = {}
+    central_system.schedule_charge_state_save = lambda: saves.append(True)
+
+    assert central_system.set_auto_stop_on_evse_suspended("charger", False)
+    assert central_system.set_auto_stop_delay("charger", 45)
+
+    assert charge_point.auto_stop_on_evse_suspended is False
+    assert charge_point.auto_stop_delay == 45
+    assert central_system.auto_stop_on_evse_suspended == {"charger": False}
+    assert central_system.auto_stop_delays == {"charger": 45.0}
+    assert len(saves) == 2
 
 
 async def test_price_optimized_mode_pauses_and_resumes_only_when_enabled():
@@ -1801,6 +1907,14 @@ async def test_cms_responses(hass, socket_enabled):
     ) as ws:
         # use a different id for debugging
         cp = ChargePoint("CP_1_normal", ws)
+
+        async def send_meter_values_and_stop():
+            """Send meter values in the order asserted below, then stop."""
+            await cp.send_meter_err_phases()
+            await cp.send_meter_line_voltage()
+            await cp.send_meter_periodic_data()
+            await cp.send_stop_transaction()
+
         try:
             await asyncio.wait_for(
                 asyncio.gather(
@@ -1813,11 +1927,7 @@ async def test_cms_responses(hass, socket_enabled):
                     cp.send_firmware_status(),
                     cp.send_data_transfer(),
                     cp.send_start_transaction(12345),
-                    cp.send_meter_err_phases(),
-                    cp.send_meter_line_voltage(),
-                    cp.send_meter_periodic_data(),
-                    # add delay to allow meter data to be processed
-                    cp.send_stop_transaction(1),
+                    send_meter_values_and_stop(),
                 ),
                 timeout=5,
             )

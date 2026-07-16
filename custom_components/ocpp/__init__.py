@@ -36,7 +36,11 @@ from .const import (
 from .user_registry import async_get_user_registry
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
-logging.getLogger(DOMAIN).setLevel(logging.INFO)
+_OCPP_PROTOCOL_LOGGER = logging.getLogger(DOMAIN)
+if _OCPP_PROTOCOL_LOGGER.level == logging.NOTSET:
+    # The upstream library logs complete protocol frames at INFO. Keep normal
+    # operation quiet, but preserve a level explicitly configured by the user.
+    _OCPP_PROTOCOL_LOGGER.setLevel(logging.WARNING)
 
 SETUP_LOCKS = "setup_locks"
 
