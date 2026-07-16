@@ -1,5 +1,22 @@
 # Release Notes
 
+## v0.5.29 - Reliable smart-charging session handling
+
+Prevents intentional smart-charging pauses from ending the active user session and reduces excessive protocol logging during normal operation.
+
+### Changed
+
+* Persists the EVSE-suspend auto-stop switch and delay across integration reloads.
+* Keeps complete OCPP protocol frames at warning level by default while respecting an explicitly configured logger level.
+* Displays `Frei` explicitly when no managed user is assigned to the charger.
+
+### Fixed
+
+* Keeps a transaction active while price-optimized charging is waiting for its next charge window.
+* Recognizes charger messages such as `H10.Smart-Charge trigger charge station suspended` as intentional pauses instead of sending a false `RemoteStopTransaction` after ten seconds.
+* Rechecks intentional pause state before executing an already scheduled auto-stop.
+* Makes the WebSocket voltage integration test deterministic by processing its meter samples in the asserted order.
+
 ## v0.5.28 - Stable v0.5.25 runtime with focused fixes
 
 Supersedes `v0.5.26` and `v0.5.27` by returning to the proven `v0.5.25` runtime behavior and applying only narrowly scoped compatibility and metering fixes.
