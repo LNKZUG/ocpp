@@ -176,9 +176,10 @@
                 }
             },
             "settings": {
-                "title": "OCPP Nutzer-Einstellungen",
-                "description": "Wähle hier den eigentlichen Strompreis pro Energieeinheit. Erlaubt sind Sensoren mit EUR/kWh, ct/kWh oder EUR/MWh. Sensoren mit EUR/h zeigen laufende Kosten und sind dafür nicht geeignet.",
+                "title": "OCPP-Geräteeinstellungen",
+                "description": "Gerät: **{device}** · aktuell verwendeter OCPP-Port: **{port}**\n\nBeim Ändern wird geprüft, ob der neue Port gültig, noch keinem anderen OCPP-Gerät zugewiesen und auf diesem System verfügbar ist.\n\nWähle hier außerdem den eigentlichen Strompreis pro Energieeinheit. Erlaubt sind Sensoren mit EUR/kWh, ct/kWh oder EUR/MWh. Sensoren mit EUR/h zeigen laufende Kosten und sind dafür nicht geeignet.",
                 "data": {
+                    "port": "OCPP-Port",
                     "default_authorization_status": "Standardstatus für unbekannte idTags",
                     "energy_price_sensor": "Strompreissensor (EUR/kWh oder ct/kWh)"
                 }
@@ -235,6 +236,9 @@
             "invalid_user": "Name und mindestens ein idTag sind erforderlich.",
             "reserved_user_name": "Dieser Nutzername ist für einen Systemstatus reserviert.",
             "duplicate_id_tag": "Mindestens ein idTag ist bereits einem anderen Nutzer zugeordnet.",
+            "invalid_port": "Der Port muss zwischen 1 und 65535 liegen.",
+            "port_in_use": "Dieser Port ist bereits einem anderen OCPP-Gerät zugewiesen.",
+            "port_unavailable": "Dieser Port ist auf dem Home-Assistant-System bereits belegt oder kann nicht geöffnet werden.",
             "invalid_energy_price_sensor_unit": "Der gewählte Sensor muss einen Strompreis in EUR/kWh, ct/kWh oder EUR/MWh liefern. EUR/h ist eine Kostenrate und kann nicht verwendet werden."
         },
         "abort": {

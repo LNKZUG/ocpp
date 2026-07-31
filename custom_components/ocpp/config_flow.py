@@ -1,4 +1,7 @@
 """Adds config flow for ocpp."""
+
+import asyncio
+
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.helpers import selector
@@ -154,17 +157,20 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             ],
         )
 
-    async def _async_finish_to_main_menu(self, options=None):
+    async def _async_finish_to_main_menu(self, options=None, data=None):
         """Persist options and return to the user-management main menu."""
-        if options is not None:
+        if options is not None or data is not None:
             self.hass.config_entries.async_update_entry(
-                self._config_entry, options=options
+                self._config_entry,
+                options=options,
+                data=data,
             )
         return await self.async_step_init()
 
     async def async_step_settings(self, user_input=None):
-        """Configure OCPP user defaults."""
+        """Configure device-specific OCPP settings."""
         errors = {}
+        current_port = self._config_entry.data.get(CONF_PORT, DEFAULT_PORT)
         current_status = self._config_entry.options.get(
             CONF_DEFAULT_AUTH_STATUS,
             self._config_entry.data.get(
@@ -177,6 +183,22 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         )
 
         if user_input is not None:
+            port = user_input[CONF_PORT]
+            if not 1 <= port <= 65535:
+                errors[CONF_PORT] = "invalid_port"
+            elif port != current_port:
+                port_in_use_by_entry = any(
+                    entry.entry_id != self._config_entry.entry_id
+                    and entry.data.get(ENTRY_TYPE, ENTRY_TYPE_CENTRAL)
+                    == ENTRY_TYPE_CENTRAL
+                    and entry.data.get(CONF_PORT, DEFAULT_PORT) == port
+                    for entry in self.hass.config_entries.async_entries(DOMAIN)
+                )
+                if port_in_use_by_entry:
+                    errors[CONF_PORT] = "port_in_use"
+                elif not await self._async_port_available(port):
+                    errors[CONF_PORT] = "port_unavailable"
+
             energy_price_sensor = user_input.get(CONF_ENERGY_PRICE_SENSOR, "")
             if energy_price_sensor:
                 state = self.hass.states.get(energy_price_sensor)
@@ -189,17 +211,25 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     errors["base"] = "invalid_energy_price_sensor_unit"
             if not errors:
                 return await self._async_finish_to_main_menu(
-                    {
+                    options={
                         **self._config_entry.options,
                         CONF_DEFAULT_AUTH_STATUS: user_input[CONF_DEFAULT_AUTH_STATUS],
                         CONF_ENERGY_PRICE_SENSOR: energy_price_sensor,
-                    }
+                    },
+                    data={
+                        **self._config_entry.data,
+                        CONF_PORT: port,
+                    },
                 )
 
         return self.async_show_form(
             step_id="settings",
             data_schema=vol.Schema(
                 {
+                    vol.Required(
+                        CONF_PORT,
+                        default=current_port,
+                    ): int,
                     vol.Required(
                         CONF_DEFAULT_AUTH_STATUS,
                         default=current_status,
@@ -212,14 +242,36 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     ),
                     vol.Optional(
                         CONF_ENERGY_PRICE_SENSOR,
-                        default=current_energy_price_sensor or None,
+                        description={
+                            "suggested_value": current_energy_price_sensor or None
+                        },
                     ): selector.EntitySelector(
                         selector.EntitySelectorConfig(domain="sensor")
                     ),
                 }
             ),
             errors=errors,
+            description_placeholders={
+                "device": str(
+                    self._config_entry.data.get(CONF_CPID, self._config_entry.title)
+                ),
+                "port": str(self._config_entry.data.get(CONF_PORT, DEFAULT_PORT)),
+            },
         )
+
+    async def _async_port_available(self, port):
+        """Return whether the configured interface can bind the requested port."""
+        host = self._config_entry.data.get(CONF_HOST, DEFAULT_HOST)
+        try:
+            server = await asyncio.start_server(
+                lambda _reader, _writer: None, host, port
+            )
+        except OSError:
+            return False
+
+        server.close()
+        await server.wait_closed()
+        return True
 
     async def async_step_add_user(self, user_input=None):
         """Add a managed OCPP user."""

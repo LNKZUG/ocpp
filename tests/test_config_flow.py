@@ -1,4 +1,5 @@
 """Test ocpp config flow."""
+
 from unittest.mock import AsyncMock, Mock, patch
 
 from homeassistant import config_entries, data_entry_flow
@@ -8,6 +9,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.ocpp.const import (  # BINARY_SENSOR,; PLATFORMS,; SENSOR,; SWITCH,
     CONF_DEFAULT_AUTH_STATUS,
     CONF_ENERGY_PRICE_SENSOR,
+    CONF_PORT,
     DOMAIN,
 )
 from custom_components.ocpp.user_registry import OcppUserRegistry
@@ -22,12 +24,15 @@ from .const import MOCK_CONFIG, MOCK_CONFIG_DATA
 @pytest.fixture(autouse=True)
 def bypass_setup_fixture():
     """Prevent setup."""
-    with patch(
-        "custom_components.ocpp.async_setup",
-        return_value=True,
-    ), patch(
-        "custom_components.ocpp.async_setup_entry",
-        return_value=True,
+    with (
+        patch(
+            "custom_components.ocpp.async_setup",
+            return_value=True,
+        ),
+        patch(
+            "custom_components.ocpp.async_setup_entry",
+            return_value=True,
+        ),
     ):
         yield
 
@@ -92,10 +97,15 @@ async def test_options_settings_ok_returns_to_main_menu(hass):
     )
     entry, result = await _init_options_flow(hass)
     result = await _select_options_menu_item(hass, result["flow_id"], "settings")
+    assert result["description_placeholders"] == {
+        "device": "test_cpid",
+        "port": "9000",
+    }
 
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         user_input={
+            CONF_PORT: 9000,
             CONF_DEFAULT_AUTH_STATUS: AuthorizationStatus.blocked.value,
             CONF_ENERGY_PRICE_SENSOR: "sensor.energy_price",
         },
@@ -120,6 +130,7 @@ async def test_options_settings_rejects_cost_rate_sensor(hass):
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         user_input={
+            CONF_PORT: 9000,
             CONF_DEFAULT_AUTH_STATUS: AuthorizationStatus.blocked.value,
             CONF_ENERGY_PRICE_SENSOR: "sensor.running_energy_cost",
         },
@@ -128,6 +139,78 @@ async def test_options_settings_rejects_cost_rate_sensor(hass):
     assert result["type"] == data_entry_flow.RESULT_TYPE_FORM
     assert result["errors"] == {"base": "invalid_energy_price_sensor_unit"}
     assert entry.options == {}
+
+
+async def test_options_settings_updates_available_port(hass):
+    """Test changing to an available port updates the config entry."""
+    entry, result = await _init_options_flow(hass)
+    result = await _select_options_menu_item(hass, result["flow_id"], "settings")
+    server = Mock()
+    server.wait_closed = AsyncMock()
+
+    with patch(
+        "custom_components.ocpp.config_flow.asyncio.start_server",
+        return_value=server,
+    ) as start_server:
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            user_input={
+                CONF_PORT: 9100,
+                CONF_DEFAULT_AUTH_STATUS: AuthorizationStatus.accepted.value,
+            },
+        )
+
+    assert result["type"] == data_entry_flow.RESULT_TYPE_MENU
+    assert entry.data[CONF_PORT] == 9100
+    start_server.assert_awaited_once()
+    server.close.assert_called_once()
+    server.wait_closed.assert_awaited_once()
+
+
+async def test_options_settings_rejects_port_used_by_another_entry(hass):
+    """Test a port assigned to another OCPP entry is rejected."""
+    other_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={**MOCK_CONFIG_DATA, CONF_PORT: 9100},
+        entry_id="other_options",
+    )
+    other_entry.add_to_hass(hass)
+    entry, result = await _init_options_flow(hass)
+    result = await _select_options_menu_item(hass, result["flow_id"], "settings")
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_PORT: 9100,
+            CONF_DEFAULT_AUTH_STATUS: AuthorizationStatus.accepted.value,
+        },
+    )
+
+    assert result["type"] == data_entry_flow.RESULT_TYPE_FORM
+    assert result["errors"] == {CONF_PORT: "port_in_use"}
+    assert entry.data[CONF_PORT] == 9000
+
+
+async def test_options_settings_rejects_unavailable_port(hass):
+    """Test a port occupied outside OCPP is rejected."""
+    entry, result = await _init_options_flow(hass)
+    result = await _select_options_menu_item(hass, result["flow_id"], "settings")
+
+    with patch(
+        "custom_components.ocpp.config_flow.asyncio.start_server",
+        side_effect=OSError,
+    ):
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            user_input={
+                CONF_PORT: 9100,
+                CONF_DEFAULT_AUTH_STATUS: AuthorizationStatus.accepted.value,
+            },
+        )
+
+    assert result["type"] == data_entry_flow.RESULT_TYPE_FORM
+    assert result["errors"] == {CONF_PORT: "port_unavailable"}
+    assert entry.data[CONF_PORT] == 9000
 
 
 class _MockUserRegistry:

@@ -175,9 +175,10 @@
                 }
             },
             "settings": {
-                "title": "OCPP user settings",
-                "description": "Select the actual energy price per energy unit. Supported sensors use EUR/kWh, ct/kWh or EUR/MWh. Sensors using EUR/h represent a running cost and are not suitable.",
+                "title": "OCPP device settings",
+                "description": "Device: **{device}** · currently used OCPP port: **{port}**\n\nWhen changed, the new port is checked for a valid range, assignments to other OCPP devices, and availability on this system.\n\nYou can also select the actual energy price per energy unit. Supported sensors use EUR/kWh, ct/kWh or EUR/MWh. Sensors using EUR/h represent a running cost and are not suitable.",
                 "data": {
+                    "port": "OCPP port",
                     "default_authorization_status": "Default status for unknown idTags",
                     "energy_price_sensor": "Energy price sensor (EUR/kWh or ct/kWh)"
                 }
@@ -234,6 +235,9 @@
             "invalid_user": "Name and at least one idTag are required.",
             "reserved_user_name": "This user name is reserved for a system state.",
             "duplicate_id_tag": "At least one idTag is already assigned to another user.",
+            "invalid_port": "The port must be between 1 and 65535.",
+            "port_in_use": "This port is already assigned to another OCPP device.",
+            "port_unavailable": "This port is already in use on the Home Assistant system or cannot be opened.",
             "invalid_energy_price_sensor_unit": "The selected sensor must provide an energy price in EUR/kWh, ct/kWh or EUR/MWh. EUR/h is a running cost and cannot be used."
         },
         "abort": {

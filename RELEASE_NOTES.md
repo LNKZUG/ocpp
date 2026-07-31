@@ -1,5 +1,12 @@
 # Release Notes
 
+## v0.5.30 - Device-specific OCPP port settings
+
+* Renames the device options page from user settings to OCPP device settings.
+* Shows the charge point identity and currently configured OCPP port in the dialog.
+* Allows changing the device port with validation for the valid TCP range, duplicate OCPP entry assignments, and ports already occupied on the Home Assistant host.
+* Saves device data and user-related options atomically so Home Assistant reloads the entry once with the new listener port.
+
 ## v0.5.29 - Reliable smart-charging session handling
 
 Prevents intentional smart-charging pauses from ending the active user session and reduces excessive protocol logging during normal operation.
